@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/workout.dart';
 import '../models/category.dart';
+import '../services/workout_service.dart';
 import '../widgets/workout_card.dart';
 import '../widgets/category_selector.dart';
 
@@ -13,6 +13,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int selectedCategoryIndex = 0;
+  final workoutService = WorkoutService();
 
   final List<Category> categories = const [
     Category(name: 'Strength', icon: 'assets/strength.png'),
@@ -20,19 +21,18 @@ class _HomeScreenState extends State<HomeScreen> {
     Category(name: 'Flexibility', icon: 'assets/flexibility.png'),
   ];
 
-  final List<Workout> workouts = const [
-    Workout(title: 'Push Ups', description: '3x15', duration: 60, image: 'assets/pushups.jpg', category: 'Strength'),
-    Workout(title: 'Squats', description: '3x20', duration: 90, image: 'assets/squats.jpg', category: 'Strength'),
-    Workout(title: 'Running', description: '10 min', duration: 600, image: 'assets/running.png', category: 'Cardio'),
-    Workout(title: 'Plank', description: '60 sec', duration: 60, image: 'assets/plank.jpg', category: 'Flexibility'),
-  ];
-
   @override
   Widget build(BuildContext context) {
-    final filteredWorkouts = workouts.where((w) => w.category == categories[selectedCategoryIndex].name).toList();
+    final allWorkouts = workoutService.getAllWorkouts();
+    final filteredWorkouts = allWorkouts
+        .where((w) => w.category == categories[selectedCategoryIndex].name)
+        .toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Workouts'), backgroundColor: const Color(0xFF1E88E5)),
+      appBar: AppBar(
+        title: const Text('Workouts'),
+        backgroundColor: const Color(0xFF1E88E5),
+      ),
       body: Column(
         children: [
           CategorySelector(
@@ -44,12 +44,33 @@ class _HomeScreenState extends State<HomeScreen> {
               });
             },
           ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: filteredWorkouts.length,
-              itemBuilder: (context, index) => WorkoutCard(workout: filteredWorkouts[index]),
+          if (filteredWorkouts.isEmpty)
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Icon(Icons.fitness_center, size: 64, color: Colors.grey),
+                    SizedBox(height: 16),
+                    Text('No workouts found', style: TextStyle(fontSize: 18)),
+                  ],
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.builder(
+                itemCount: filteredWorkouts.length,
+                itemBuilder: (context, index) => WorkoutCard(
+                  workout: filteredWorkouts[index],
+                  onFavoriteTap: () {
+                    setState(() {
+                      workoutService.toggleFavorite(filteredWorkouts[index].id);
+                    });
+                  },
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );

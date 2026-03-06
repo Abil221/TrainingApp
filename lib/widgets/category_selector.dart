@@ -16,11 +16,11 @@ class CategorySelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 90, // немного больше высота, чтобы текст и иконка помещались
+      height: 100,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: categories.length,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         itemBuilder: (context, index) {
           final category = categories[index];
           final selected = index == selectedIndex;
@@ -29,15 +29,16 @@ class CategorySelector extends StatelessWidget {
             onTap: () => onSelected(index),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
-              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               padding: const EdgeInsets.all(8),
-              width: 80, // фиксированная ширина карточки
+              width: 80,
               decoration: BoxDecoration(
                 color: selected ? const Color(0xFF1E88E5) : Colors.grey[200],
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Image.asset(
                     category.icon,
@@ -45,15 +46,16 @@ class CategorySelector extends StatelessWidget {
                     height: 40,
                     fit: BoxFit.contain,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     category.name,
                     style: TextStyle(
                         color: selected ? Colors.white : Colors.black,
-                        fontWeight: FontWeight.w500),
-                    textAlign: TextAlign.center, // текст по центру
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12),
+                    textAlign: TextAlign.center,
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis, // обрезает длинные названия
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),

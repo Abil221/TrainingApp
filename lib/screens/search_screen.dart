@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../models/workout.dart';
+import '../services/workout_service.dart';
 import '../widgets/workout_card.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -12,30 +12,47 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController controller = TextEditingController();
   String query = '';
+  final workoutService = WorkoutService();
 
-  final List<Workout> workouts = const [
-    Workout(title: 'Push Ups', description: '3x15', duration: 60, image: 'assets/pushups.jpg', category: 'Strength'),
-    Workout(title: 'Squats', description: '3x20', duration: 90, image: 'assets/squats.jpg', category: 'Strength'),
-    Workout(title: 'Running', description: '10 min', duration: 600, image: 'assets/running.png', category: 'Cardio'),
-    Workout(title: 'Plank', description: '60 sec', duration: 60, image: 'assets/plank.jpg', category: 'Flexibility'),
-  ];
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final filtered = workouts.where((w) => w.title.toLowerCase().contains(query.toLowerCase())).toList();
+    final filtered = query.isEmpty
+        ? workoutService.getAllWorkouts()
+        : workoutService.searchWorkouts(query);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Search Workouts'), backgroundColor: const Color(0xFF1E88E5)),
+      appBar: AppBar(
+        title: const Text('Search Workouts'),
+        backgroundColor: const Color(0xFF1E88E5),
+      ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(16),
             child: TextField(
               controller: controller,
-              decoration: const InputDecoration(
-                  hintText: 'Search workouts...',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.search)),
+              decoration: InputDecoration(
+                hintText: 'Search by name or category...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: query.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          controller.clear();
+                          setState(() => query = '');
+                        },
+                      )
+                    : null,
+              ),
               onChanged: (value) {
                 setState(() {
                   query = value;
@@ -43,12 +60,38 @@ class _SearchScreenState extends State<SearchScreen> {
               },
             ),
           ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: filtered.length,
-              itemBuilder: (context, index) => WorkoutCard(workout: filtered[index]),
+          if (filtered.isEmpty)
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.search_off, size: 64, color: Colors.grey),
+                    const SizedBox(height: 16),
+                    Text(
+                      query.isEmpty
+                          ? 'Start searching for workouts'
+                          : 'No workouts found',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.builder(
+                itemCount: filtered.length,
+                itemBuilder: (context, index) => WorkoutCard(
+                  workout: filtered[index],
+                  onFavoriteTap: () {
+                    setState(() {
+                      workoutService.toggleFavorite(filtered[index].id);
+                    });
+                  },
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
