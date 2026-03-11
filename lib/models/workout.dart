@@ -32,11 +32,11 @@ class Workout {
   String get difficultyString {
     switch (difficulty) {
       case DifficultyLevel.easy:
-        return 'Easy';
+        return 'Легко';
       case DifficultyLevel.medium:
-        return 'Medium';
+        return 'Средне';
       case DifficultyLevel.hard:
-        return 'Hard';
+        return 'Сложно';
     }
   }
 
