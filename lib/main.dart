@@ -4,6 +4,7 @@ import 'app_settings.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/daily_stats_screen.dart';
 import 'screens/search_screen.dart';
 import 'widgets/app_surfaces.dart';
 
@@ -144,6 +145,7 @@ class _MainTabsState extends State<MainTabs> {
   final List<Widget> _screens = const [
     HomeScreen(),
     SearchScreen(),
+    DailyStatsScreen(),
     ProfileScreen(),
   ];
 
@@ -188,6 +190,10 @@ class _MainTabsState extends State<MainTabs> {
           NavigationDestination(
             icon: Icon(Icons.search_rounded),
             label: 'Поиск',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_today_rounded),
+            label: 'За день',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_rounded),

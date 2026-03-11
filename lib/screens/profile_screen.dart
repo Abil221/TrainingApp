@@ -26,6 +26,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final totalCalories = stats['totalCalories'] ?? 0;
     final totalDuration = stats['totalDuration'] ?? 0;
     final bmi = (weight / ((height / 100) * (height / 100))).toStringAsFixed(1);
+    
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = isDark 
+        ? const Color(0xFF1A2538).withValues(alpha: 0.8)
+        : const Color(0xFFF8FAFC);
+    final heroGradientStart = isDark ? const Color(0xFF111827) : const Color(0xFFE8EEF5);
+    final heroGradientEnd = isDark ? const Color(0xFF283548) : const Color(0xFFD4DDE9);
 
     return Scaffold(
       appBar: AppBar(
@@ -50,8 +57,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(30),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF111827), Color(0xFF283548)],
+                gradient: LinearGradient(
+                  colors: [heroGradientStart, heroGradientEnd],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -61,13 +68,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   Row(
                     children: [
-                      const CircleAvatar(
+                      CircleAvatar(
                         radius: 34,
-                        backgroundColor: Colors.white,
+                        backgroundColor: isDark
+                            ? const Color(0xFFFF6B35)
+                            : const Color(0xFF111827),
                         child: Icon(
                           Icons.person_rounded,
                           size: 34,
-                          color: Color(0xFF111827),
+                          color: isDark
+                              ? Colors.white
+                              : const Color(0xFFFAF6F1),
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -77,8 +88,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           children: [
                             Text(
                               userName,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: isDark ? Colors.white : const Color(0xFF111827),
                                 fontSize: 28,
                                 fontWeight: FontWeight.w900,
                               ),
@@ -86,8 +97,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             const SizedBox(height: 6),
                             Text(
                               'Уровень подготовки: $fitnessLevel',
-                              style: const TextStyle(
-                                color: Color(0xFFD1D5DB),
+                              style: TextStyle(
+                                color: isDark
+                                    ? const Color(0xFFD1D5DB)
+                                    : const Color(0xFF525B6A),
                                 fontSize: 14,
                               ),
                             ),
@@ -103,6 +116,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: _ProfileHeroStat(
                           value: '$totalWorkouts',
                           label: 'тренировок',
+                          isDark: isDark,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -110,6 +124,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: _ProfileHeroStat(
                           value: _formatCompact(totalCalories),
                           label: 'калорий',
+                          isDark: isDark,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -117,6 +132,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: _ProfileHeroStat(
                           value: '${totalDuration ~/ 3600}ч',
                           label: 'времени',
+                          isDark: isDark,
                         ),
                       ),
                     ],
@@ -131,7 +147,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: _MetricCard(
                     title: 'Рост',
                     value: '$height см',
-                    color: const Color(0xFF111827),
+                    color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF111827),
+                    isDark: isDark,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -140,6 +157,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: 'Вес',
                     value: '$weight кг',
                     color: const Color(0xFFFF6B35),
+                    isDark: isDark,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -148,6 +166,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: 'BMI',
                     value: bmi,
                     color: const Color(0xFF2A9D8F),
+                    isDark: isDark,
                   ),
                 ),
               ],
@@ -155,17 +174,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.all(20),
-              decoration:
-                  appPanelDecoration(context, accent: const Color(0xFF111827)),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                color: cardColor,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Быстрые действия',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
+                      color: isDark ? Colors.white : const Color(0xFF111827),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -181,14 +202,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             builder: (_) => const FavoritesScreen()),
                       );
                     },
+                    isDark: isDark,
                   ),
                   const SizedBox(height: 12),
                   _ActionTile(
                     icon: Icons.edit_rounded,
                     title: 'Редактировать профиль',
-                    subtitle: 'Измени имя и уровень подготовки',
-                    color: const Color(0xFF111827),
+                    subtitle: 'Имя, рост, вес и уровень подготовки',
+                    color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF111827),
                     onTap: _showEditProfileDialog,
+                    isDark: isDark,
                   ),
                   const SizedBox(height: 12),
                   _ActionTile(
@@ -203,6 +226,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             builder: (_) => const SettingsScreen()),
                       );
                     },
+                    isDark: isDark,
                   ),
                 ],
               ),
@@ -223,11 +247,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showEditProfileDialog() {
     final nameController = TextEditingController(text: userName);
     final levelController = TextEditingController(text: fitnessLevel);
+    final heightController = TextEditingController(text: height.toString());
+    final weightController = TextEditingController(text: weight.toString());
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Редактирование профиля'),
+        title: const Text('Редактировать профиль'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -247,6 +273,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: heightController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Рост (см)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: weightController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Вес (кг)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -264,6 +316,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 fitnessLevel = levelController.text.trim().isEmpty
                     ? fitnessLevel
                     : levelController.text.trim();
+                
+                // Update height
+                final newHeight = int.tryParse(heightController.text.trim());
+                if (newHeight != null && newHeight > 0) {
+                  height = newHeight;
+                }
+                
+                // Update weight
+                final newWeight = int.tryParse(weightController.text.trim());
+                if (newWeight != null && newWeight > 0) {
+                  weight = newWeight;
+                }
               });
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
@@ -281,15 +345,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
 class _ProfileHeroStat extends StatelessWidget {
   final String value;
   final String label;
+  final bool isDark;
 
-  const _ProfileHeroStat({required this.value, required this.label});
+  const _ProfileHeroStat({
+    required this.value,
+    required this.label,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : Colors.black.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
@@ -297,8 +368,8 @@ class _ProfileHeroStat extends StatelessWidget {
         children: [
           Text(
             value,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: isDark ? Colors.white : const Color(0xFF111827),
               fontSize: 20,
               fontWeight: FontWeight.w900,
             ),
@@ -306,7 +377,12 @@ class _ProfileHeroStat extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
-            style: const TextStyle(color: Color(0xFFD1D5DB), fontSize: 12),
+            style: TextStyle(
+              color: isDark
+                  ? const Color(0xFFD1D5DB)
+                  : const Color(0xFF6B7280),
+              fontSize: 12,
+            ),
           ),
         ],
       ),
@@ -318,25 +394,38 @@ class _MetricCard extends StatelessWidget {
   final String title;
   final String value;
   final Color color;
+  final bool isDark;
 
   const _MetricCard({
     required this.title,
     required this.value,
     required this.color,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-      decoration: appPanelDecoration(context, accent: color, radius: 22),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        color: isDark
+            ? color.withValues(alpha: 0.1)
+            : color.withValues(alpha: 0.08),
+        border: Border.all(
+          color: color.withValues(alpha: isDark ? 0.2 : 0.15),
+          width: 1,
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: Color(0xFF6B7280),
+            style: TextStyle(
+              color: isDark
+                  ? const Color(0xFF9CA3AF)
+                  : const Color(0xFF6B7280),
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -362,6 +451,7 @@ class _ActionTile extends StatelessWidget {
   final String subtitle;
   final Color color;
   final VoidCallback onTap;
+  final bool isDark;
 
   const _ActionTile({
     required this.icon,
@@ -369,12 +459,15 @@ class _ActionTile extends StatelessWidget {
     required this.subtitle,
     required this.color,
     required this.onTap,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFFF9FAFB),
+      color: isDark
+          ? const Color(0xFF1F2937).withValues(alpha: 0.6)
+          : const Color(0xFFF8FAFC),
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         onTap: onTap,
@@ -399,16 +492,18 @@ class _ActionTile extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        color: Color(0xFF111827),
+                      style: TextStyle(
+                        color: isDark ? Colors.white : const Color(0xFF111827),
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: const TextStyle(
-                        color: Color(0xFF6B7280),
+                      style: TextStyle(
+                        color: isDark
+                            ? const Color(0xFF9CA3AF)
+                            : const Color(0xFF6B7280),
                         fontSize: 13,
                         height: 1.4,
                       ),
@@ -416,7 +511,13 @@ class _ActionTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: isDark
+                    ? const Color(0xFF6B7280)
+                    : const Color(0xFFD1D5DB),
+              ),
             ],
           ),
         ),

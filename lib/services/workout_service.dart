@@ -1,3 +1,4 @@
+import '../models/daily_workout.dart';
 import '../models/workout.dart';
 
 const List<String> _gymSplitGroups = [
@@ -15,7 +16,38 @@ class WorkoutService {
     return _instance;
   }
 
-  WorkoutService._internal();
+  WorkoutService._internal() {
+    _initializeDemoData();
+  }
+
+  // Daily workouts tracking: key is date in 'yyyy-MM-dd' format
+  final Map<String, List<Workout>> _dailyWorkouts = {};
+
+  void _initializeDemoData() {
+    // Add demo data for the last 3 days
+    final today = DateTime.now();
+    
+    // Today
+    _dailyWorkouts[_formatDate(today)] = [
+      _workouts[0], // Отжимания
+      _workouts[1], // Приседания
+    ];
+    
+    // Yesterday
+    final yesterday = today.subtract(const Duration(days: 1));
+    _dailyWorkouts[_formatDate(yesterday)] = [
+      _workouts[2], // Бег
+      _workouts[3], // Планка
+      _workouts[5], // Йога-флоу
+    ];
+    
+    // 2 days ago
+    final twoDaysAgo = today.subtract(const Duration(days: 2));
+    _dailyWorkouts[_formatDate(twoDaysAgo)] = [
+      _workouts[7], // Жим гантелей на наклонной
+      _workouts[9], // Тяга штанги в наклоне
+    ];
+  }
 
   final List<Workout> _workouts = [
     Workout(
@@ -395,5 +427,80 @@ class WorkoutService {
       'totalCalories': totalCalories,
       'totalDuration': totalDuration,
     };
+  }
+
+  // Complete a workout on a specific date
+  void completeWorkoutOnDate(String workoutId, DateTime date) {
+    final dateKey = _formatDate(date);
+    if (!_dailyWorkouts.containsKey(dateKey)) {
+      _dailyWorkouts[dateKey] = [];
+    }
+
+    final workout = getWorkoutById(workoutId);
+    if (workout != null) {
+      _dailyWorkouts[dateKey]!.add(workout);
+      markAsCompleted(workoutId);
+    }
+  }
+
+  // Get workouts for a specific date
+  List<Workout> getWorkoutsForDate(DateTime date) {
+    final dateKey = _formatDate(date);
+    return _dailyWorkouts[dateKey] ?? [];
+  }
+
+  // Get all dates with workouts
+  List<DateTime> getAllTrainingDates() {
+    return _dailyWorkouts.keys
+        .map((dateKey) => DateTime.parse(dateKey))
+        .toList()
+      ..sort((a, b) => b.compareTo(a)); // Sort by most recent first
+  }
+
+  // Get daily workout for a specific date
+  DailyWorkout? getDailyWorkout(DateTime date) {
+    final workouts = getWorkoutsForDate(date);
+    if (workouts.isEmpty) return null;
+
+    int totalCalories = workouts.fold(0, (sum, w) => sum + w.caloriesBurned);
+    int totalDuration = workouts.fold(0, (sum, w) => sum + w.duration);
+
+    return DailyWorkout(
+      date: date,
+      exercises: workouts,
+      totalCalories: totalCalories,
+      totalDuration: totalDuration,
+    );
+  }
+
+  // Calculate training streak (consecutive days)
+  int getTrainingStreak() {
+    final dates = getAllTrainingDates();
+    if (dates.isEmpty) return 0;
+
+    int streak = 1;
+    for (int i = 0; i < dates.length - 1; i++) {
+      final difference = dates[i].difference(dates[i + 1]).inDays;
+      if (difference == 1) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
+  // Check if today has workouts
+  bool hasWorkoutToday() {
+    final today = DateTime.now();
+    return getWorkoutsForDate(today).isNotEmpty;
+  }
+
+  // Format date as 'yyyy-MM-dd'
+  String _formatDate(DateTime date) {
+    final year = date.year;
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 }
