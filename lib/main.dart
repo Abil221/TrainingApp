@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_settings.dart';
 import 'screens/onboarding_screen.dart';
@@ -6,11 +7,13 @@ import 'screens/home_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/daily_stats_screen.dart';
 import 'screens/search_screen.dart';
+import 'services/workout_service.dart';
 import 'widgets/app_surfaces.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppSettings().load();
+  await WorkoutService().load();
   runApp(const MyApp());
 }
 
@@ -21,23 +24,29 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final appSettings = AppSettings();
 
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: appSettings.themeMode,
-      builder: (context, themeMode, child) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        appSettings.themeMode,
+        appSettings.language,
+        appSettings.onboardingCompleted,
+      ]),
+      builder: (context, child) {
         return MaterialApp(
           title: 'Workout Tracker',
           debugShowCheckedModeBanner: false,
-          themeMode: themeMode,
+          themeMode: appSettings.themeMode.value,
           theme: _buildTheme(Brightness.light),
           darkTheme: _buildTheme(Brightness.dark),
-          home: ValueListenableBuilder<bool>(
-            valueListenable: appSettings.onboardingCompleted,
-            builder: (context, onboardingCompleted, child) {
-              return onboardingCompleted
-                  ? const MainTabs()
-                  : const OnboardingScreen();
-            },
-          ),
+          locale: appSettings.locale,
+          supportedLocales: appSettings.supportedLocales,
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          home: appSettings.onboardingCompleted.value
+              ? const MainTabs()
+              : const OnboardingScreen(),
         );
       },
     );
@@ -159,24 +168,9 @@ class _MainTabsState extends State<MainTabs> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: AppScreenBackground(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 350),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, animation) {
-            final offsetAnimation = Tween<Offset>(
-              begin: const Offset(0.03, 0),
-              end: Offset.zero,
-            ).animate(animation);
-            return FadeTransition(
-              opacity: animation,
-              child: SlideTransition(position: offsetAnimation, child: child),
-            );
-          },
-          child: KeyedSubtree(
-            key: ValueKey(_selectedIndex),
-            child: _screens[_selectedIndex],
-          ),
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: _screens,
         ),
       ),
       bottomNavigationBar: NavigationBar(

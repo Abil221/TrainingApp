@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../app_settings.dart';
+import '../models/user_progress.dart';
 import '../services/workout_service.dart';
 import '../widgets/app_surfaces.dart';
 import 'favorites_screen.dart';
@@ -14,226 +16,243 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final workoutService = WorkoutService();
-  String userName = 'Атлет';
-  String fitnessLevel = 'Средний';
-  int height = 175;
-  int weight = 75;
+  final appSettings = AppSettings();
 
   @override
   Widget build(BuildContext context) {
-    final stats = workoutService.getStats();
-    final totalWorkouts = stats['totalWorkouts'] ?? 0;
-    final totalCalories = stats['totalCalories'] ?? 0;
-    final totalDuration = stats['totalDuration'] ?? 0;
-    final bmi = (weight / ((height / 100) * (height / 100))).toStringAsFixed(1);
-    
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardColor = isDark 
+    final cardColor = isDark
         ? const Color(0xFF1A2538).withValues(alpha: 0.8)
         : const Color(0xFFF8FAFC);
-    final heroGradientStart = isDark ? const Color(0xFF111827) : const Color(0xFFE8EEF5);
-    final heroGradientEnd = isDark ? const Color(0xFF283548) : const Color(0xFFD4DDE9);
+    final heroGradientStart =
+        isDark ? const Color(0xFF111827) : const Color(0xFFE8EEF5);
+    final heroGradientEnd =
+        isDark ? const Color(0xFF283548) : const Color(0xFFD4DDE9);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Профиль'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            },
+    return ListenableBuilder(
+      listenable: workoutService,
+      builder: (context, child) {
+        final stats = workoutService.getStats();
+        final totalWorkouts = stats['totalWorkouts'] ?? 0;
+        final totalCalories = stats['totalCalories'] ?? 0;
+        final totalDuration = stats['totalDuration'] ?? 0;
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Профиль'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                },
+              ),
+            ],
           ),
-        ],
-      ),
-      body: AppScreenBackground(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(30),
-                gradient: LinearGradient(
-                  colors: [heroGradientStart, heroGradientEnd],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 34,
-                        backgroundColor: isDark
-                            ? const Color(0xFFFF6B35)
-                            : const Color(0xFF111827),
-                        child: Icon(
-                          Icons.person_rounded,
-                          size: 34,
-                          color: isDark
-                              ? Colors.white
-                              : const Color(0xFFFAF6F1),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              userName,
-                              style: TextStyle(
-                                color: isDark ? Colors.white : const Color(0xFF111827),
-                                fontSize: 28,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Уровень подготовки: $fitnessLevel',
-                              style: TextStyle(
-                                color: isDark
-                                    ? const Color(0xFFD1D5DB)
-                                    : const Color(0xFF525B6A),
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 22),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _ProfileHeroStat(
-                          value: '$totalWorkouts',
-                          label: 'тренировок',
-                          isDark: isDark,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _ProfileHeroStat(
-                          value: _formatCompact(totalCalories),
-                          label: 'калорий',
-                          isDark: isDark,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _ProfileHeroStat(
-                          value: '${totalDuration ~/ 3600}ч',
-                          label: 'времени',
-                          isDark: isDark,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
+          body: AppScreenBackground(
+            child: ValueListenableBuilder<UserProgress>(
+              valueListenable: appSettings.userProgress,
+              builder: (context, progress, child) {
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
               children: [
-                Expanded(
-                  child: _MetricCard(
-                    title: 'Рост',
-                    value: '$height см',
-                    color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF111827),
-                    isDark: isDark,
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(30),
+                    gradient: LinearGradient(
+                      colors: [heroGradientStart, heroGradientEnd],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 34,
+                            backgroundColor: isDark
+                                ? const Color(0xFFFF6B35)
+                                : const Color(0xFF111827),
+                            child: Icon(
+                              Icons.person_rounded,
+                              size: 34,
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFFFAF6F1),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  progress.userName,
+                                  style: TextStyle(
+                                    color: isDark
+                                        ? Colors.white
+                                        : const Color(0xFF111827),
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Уровень подготовки: ${progress.fitnessLevel}',
+                                  style: TextStyle(
+                                    color: isDark
+                                        ? const Color(0xFFD1D5DB)
+                                        : const Color(0xFF525B6A),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _ProfileHeroStat(
+                              value: '$totalWorkouts',
+                              label: 'тренировок',
+                              isDark: isDark,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _ProfileHeroStat(
+                              value: _formatCompact(totalCalories),
+                              label: 'калорий',
+                              isDark: isDark,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _ProfileHeroStat(
+                              value: '${totalDuration ~/ 3600}ч',
+                              label: 'времени',
+                              isDark: isDark,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _MetricCard(
-                    title: 'Вес',
-                    value: '$weight кг',
-                    color: const Color(0xFFFF6B35),
-                    isDark: isDark,
-                  ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _MetricCard(
+                        title: 'Рост',
+                        value: '${progress.height} см',
+                        color: isDark
+                            ? const Color(0xFF60A5FA)
+                            : const Color(0xFF111827),
+                        isDark: isDark,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _MetricCard(
+                        title: 'Вес',
+                        value: '${progress.weight} кг',
+                        color: const Color(0xFFFF6B35),
+                        isDark: isDark,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _MetricCard(
+                        title: 'BMI',
+                        value: progress.bmi.toStringAsFixed(1),
+                        color: const Color(0xFF2A9D8F),
+                        isDark: isDark,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _MetricCard(
-                    title: 'BMI',
-                    value: bmi,
-                    color: const Color(0xFF2A9D8F),
-                    isDark: isDark,
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    color: cardColor,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Быстрые действия',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color:
+                              isDark ? Colors.white : const Color(0xFF111827),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _ActionTile(
+                        icon: Icons.favorite_rounded,
+                        title: 'Избранные тренировки',
+                        subtitle: 'Быстрый доступ к сохранённым упражнениям',
+                        color: const Color(0xFFE63946),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const FavoritesScreen(),
+                            ),
+                          );
+                        },
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 12),
+                      _ActionTile(
+                        icon: Icons.edit_rounded,
+                        title: 'Редактировать профиль',
+                        subtitle: 'Имя, рост, вес и уровень подготовки',
+                        color: isDark
+                            ? const Color(0xFF60A5FA)
+                            : const Color(0xFF111827),
+                        onTap: () => _showEditProfileDialog(progress),
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 12),
+                      _ActionTile(
+                        icon: Icons.settings_rounded,
+                        title: 'Настройки приложения',
+                        subtitle: 'Уведомления, язык и параметры интерфейса',
+                        color: const Color(0xFFFF6B35),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const SettingsScreen(),
+                            ),
+                          );
+                        },
+                        isDark: isDark,
+                      ),
+                    ],
                   ),
                 ),
               ],
+            );
+              },
             ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                color: cardColor,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Быстрые действия',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      color: isDark ? Colors.white : const Color(0xFF111827),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _ActionTile(
-                    icon: Icons.favorite_rounded,
-                    title: 'Избранные тренировки',
-                    subtitle: 'Быстрый доступ к сохранённым упражнениям',
-                    color: const Color(0xFFE63946),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const FavoritesScreen()),
-                      );
-                    },
-                    isDark: isDark,
-                  ),
-                  const SizedBox(height: 12),
-                  _ActionTile(
-                    icon: Icons.edit_rounded,
-                    title: 'Редактировать профиль',
-                    subtitle: 'Имя, рост, вес и уровень подготовки',
-                    color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF111827),
-                    onTap: _showEditProfileDialog,
-                    isDark: isDark,
-                  ),
-                  const SizedBox(height: 12),
-                  _ActionTile(
-                    icon: Icons.settings_rounded,
-                    title: 'Настройки приложения',
-                    subtitle: 'Уведомления, язык и параметры интерфейса',
-                    color: const Color(0xFFFF6B35),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const SettingsScreen()),
-                      );
-                    },
-                    isDark: isDark,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -244,15 +263,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return '$value';
   }
 
-  void _showEditProfileDialog() {
-    final nameController = TextEditingController(text: userName);
-    final levelController = TextEditingController(text: fitnessLevel);
-    final heightController = TextEditingController(text: height.toString());
-    final weightController = TextEditingController(text: weight.toString());
+  void _showEditProfileDialog(UserProgress currentProgress) {
+    final nameController =
+        TextEditingController(text: currentProgress.userName);
+    final levelController =
+        TextEditingController(text: currentProgress.fitnessLevel);
+    final heightController =
+        TextEditingController(text: currentProgress.height.toString());
+    final weightController =
+        TextEditingController(text: currentProgress.weight.toString());
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Редактировать профиль'),
         content: SingleChildScrollView(
           child: Column(
@@ -304,33 +327,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Отмена'),
           ),
           TextButton(
-            onPressed: () {
-              setState(() {
-                userName = nameController.text.trim().isEmpty
-                    ? userName
-                    : nameController.text.trim();
-                fitnessLevel = levelController.text.trim().isEmpty
-                    ? fitnessLevel
-                    : levelController.text.trim();
-                
-                // Update height
-                final newHeight = int.tryParse(heightController.text.trim());
-                if (newHeight != null && newHeight > 0) {
-                  height = newHeight;
-                }
-                
-                // Update weight
-                final newWeight = int.tryParse(weightController.text.trim());
-                if (newWeight != null && newWeight > 0) {
-                  weight = newWeight;
-                }
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final updatedProgress = currentProgress.copyWith(
+                userName: nameController.text.trim().isEmpty
+                    ? currentProgress.userName
+                    : nameController.text.trim(),
+                fitnessLevel: levelController.text.trim().isEmpty
+                    ? currentProgress.fitnessLevel
+                    : levelController.text.trim(),
+                height: _parseMetric(
+                  heightController.text,
+                  fallback: currentProgress.height,
+                  min: 50,
+                  max: 260,
+                ),
+                weight: _parseMetric(
+                  weightController.text,
+                  fallback: currentProgress.weight,
+                  min: 20,
+                  max: 400,
+                ),
+              );
+
+              await appSettings.updateUserProgress(updatedProgress);
+              if (!mounted) {
+                return;
+              }
+
+              Navigator.of(context).pop();
+              messenger.showSnackBar(
                 const SnackBar(content: Text('Профиль обновлён')),
               );
             },
@@ -339,6 +369,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
+  }
+
+  int _parseMetric(
+    String rawValue, {
+    required int fallback,
+    required int min,
+    required int max,
+  }) {
+    final parsedValue = int.tryParse(rawValue.trim());
+    if (parsedValue == null || parsedValue < min || parsedValue > max) {
+      return fallback;
+    }
+
+    return parsedValue;
   }
 }
 
@@ -378,9 +422,7 @@ class _ProfileHeroStat extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: isDark
-                  ? const Color(0xFFD1D5DB)
-                  : const Color(0xFF6B7280),
+              color: isDark ? const Color(0xFFD1D5DB) : const Color(0xFF6B7280),
               fontSize: 12,
             ),
           ),
@@ -423,9 +465,7 @@ class _MetricCard extends StatelessWidget {
           Text(
             title,
             style: TextStyle(
-              color: isDark
-                  ? const Color(0xFF9CA3AF)
-                  : const Color(0xFF6B7280),
+              color: isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280),
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -514,9 +554,8 @@ class _ActionTile extends StatelessWidget {
               Icon(
                 Icons.arrow_forward_ios_rounded,
                 size: 16,
-                color: isDark
-                    ? const Color(0xFF6B7280)
-                    : const Color(0xFFD1D5DB),
+                color:
+                    isDark ? const Color(0xFF6B7280) : const Color(0xFFD1D5DB),
               ),
             ],
           ),

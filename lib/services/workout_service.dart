@@ -1,5 +1,16 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/daily_workout.dart';
+import '../models/workout_log_entry.dart';
 import '../models/workout.dart';
+
+const _favoriteWorkoutIdsKey = 'favorite_workout_ids';
+const _completedWorkoutCountsKey = 'completed_workout_counts';
+const _dailyWorkoutHistoryKey = 'daily_workout_history';
+const _workoutLogsKey = 'workout_logs';
 
 const List<String> _gymSplitGroups = [
   'Грудь',
@@ -9,7 +20,7 @@ const List<String> _gymSplitGroups = [
   'Руки',
 ];
 
-class WorkoutService {
+class WorkoutService extends ChangeNotifier {
   static final WorkoutService _instance = WorkoutService._internal();
 
   factory WorkoutService() {
@@ -17,36 +28,84 @@ class WorkoutService {
   }
 
   WorkoutService._internal() {
-    _initializeDemoData();
+    _resetWorkoutState();
   }
 
-  // Daily workouts tracking: key is date in 'yyyy-MM-dd' format
-  final Map<String, List<Workout>> _dailyWorkouts = {};
+  final Map<String, List<String>> _dailyWorkoutIds = {};
+  final Map<String, List<WorkoutLogEntry>> _dailyWorkoutLogs = {};
+  SharedPreferences? _preferences;
+
+  Future<void> load() async {
+    if (_preferences != null) {
+      return;
+    }
+
+    _preferences = await SharedPreferences.getInstance();
+    _resetWorkoutState();
+
+    final favorites = _preferences!.getStringList(_favoriteWorkoutIdsKey);
+    final completedCounts = _preferences!.getString(_completedWorkoutCountsKey);
+    final dailyHistory = _preferences!.getString(_dailyWorkoutHistoryKey);
+    final encodedWorkoutLogs = _preferences!.getString(_workoutLogsKey);
+
+    final hasSavedState = favorites != null ||
+        completedCounts != null ||
+        dailyHistory != null ||
+        encodedWorkoutLogs != null;
+
+    if (!hasSavedState) {
+      _initializeDemoData();
+      await _saveState();
+      notifyListeners();
+      return;
+    }
+
+    _restoreFavorites(favorites ?? const []);
+    _restoreCompletedCounts(completedCounts);
+    _restoreDailyHistory(dailyHistory);
+
+    if (encodedWorkoutLogs != null && encodedWorkoutLogs.isNotEmpty) {
+      _restoreWorkoutLogs(encodedWorkoutLogs);
+    } else {
+      _hydrateLogsFromDailyHistory();
+      await _saveState();
+    }
+
+    notifyListeners();
+  }
+
+  void _resetWorkoutState() {
+    _dailyWorkoutIds.clear();
+    _dailyWorkoutLogs.clear();
+
+    for (var index = 0; index < _workouts.length; index++) {
+      _workouts[index] = _workouts[index].copyWith(
+        isFavorite: false,
+        completedCount: 0,
+      );
+    }
+  }
 
   void _initializeDemoData() {
-    // Add demo data for the last 3 days
     final today = DateTime.now();
-    
-    // Today
-    _dailyWorkouts[_formatDate(today)] = [
-      _workouts[0], // Отжимания
-      _workouts[1], // Приседания
-    ];
-    
-    // Yesterday
+
+    _seedDemoWorkout(today, _workouts[0],
+        progressValue: 15, progressUnit: 'повт.');
+    _seedDemoWorkout(today, _workouts[1],
+        progressValue: 20, progressUnit: 'повт.');
+
     final yesterday = today.subtract(const Duration(days: 1));
-    _dailyWorkouts[_formatDate(yesterday)] = [
-      _workouts[2], // Бег
-      _workouts[3], // Планка
-      _workouts[5], // Йога-флоу
-    ];
-    
-    // 2 days ago
+    _seedDemoWorkout(yesterday, _workouts[2],
+        progressValue: 3.5, progressUnit: 'км');
+    _seedDemoWorkout(yesterday, _workouts[3],
+        progressValue: 60, progressUnit: 'сек');
+    _seedDemoWorkout(yesterday, _workouts[5]);
+
     final twoDaysAgo = today.subtract(const Duration(days: 2));
-    _dailyWorkouts[_formatDate(twoDaysAgo)] = [
-      _workouts[7], // Жим гантелей на наклонной
-      _workouts[9], // Тяга штанги в наклоне
-    ];
+    _seedDemoWorkout(twoDaysAgo, _workouts[7],
+        progressValue: 32, progressUnit: 'кг');
+    _seedDemoWorkout(twoDaysAgo, _workouts[9],
+        progressValue: 40, progressUnit: 'кг');
   }
 
   final List<Workout> _workouts = [
@@ -317,10 +376,8 @@ class WorkoutService {
     ),
   ];
 
-  // Get all workouts
   List<Workout> getAllWorkouts() => List.from(_workouts);
 
-  // Get workouts by category
   List<Workout> getWorkoutsByCategory(String category) {
     return _workouts.where((w) => w.category == category).toList();
   }
@@ -351,27 +408,30 @@ class WorkoutService {
     return _workouts.where((w) => w.category == 'Fullbody').toList();
   }
 
-  // Get favorites
   List<Workout> getFavorites() {
     return _workouts.where((w) => w.isFavorite).toList();
   }
 
-  // Toggle favorite
   void toggleFavorite(String id) {
     final index = _workouts.indexWhere((w) => w.id == id);
     if (index != -1) {
       _workouts[index] =
           _workouts[index].copyWith(isFavorite: !_workouts[index].isFavorite);
+      _persistState();
     }
   }
 
-  // Search workouts
   List<Workout> searchWorkouts(String query) {
     final normalizedQuery = query.toLowerCase();
     return _workouts
         .where((w) =>
             w.title.toLowerCase().contains(normalizedQuery) ||
             w.category.toLowerCase().contains(normalizedQuery) ||
+            w.description.toLowerCase().contains(normalizedQuery) ||
+            w.instructions.toLowerCase().contains(normalizedQuery) ||
+            w.equipment.any(
+              (item) => item.toLowerCase().contains(normalizedQuery),
+            ) ||
             _localizedCategorySearchTerms(w.category)
                 .any((term) => term.contains(normalizedQuery)))
         .toList();
@@ -396,7 +456,6 @@ class WorkoutService {
     }
   }
 
-  // Get workout by ID
   Workout? getWorkoutById(String id) {
     try {
       return _workouts.firstWhere((w) => w.id == id);
@@ -405,23 +464,17 @@ class WorkoutService {
     }
   }
 
-  // Mark workout as completed
   void markAsCompleted(String id) {
-    final index = _workouts.indexWhere((w) => w.id == id);
-    if (index != -1) {
-      _workouts[index] = _workouts[index].copyWith(
-        completedCount: _workouts[index].completedCount + 1,
-      );
-    }
+    completeWorkoutOnDate(id, DateTime.now());
   }
 
-  // Get total stats
   Map<String, int> getStats() {
-    int totalWorkouts = _workouts.fold(0, (sum, w) => sum + w.completedCount);
-    int totalCalories = _workouts.fold(
-        0, (sum, w) => sum + (w.caloriesBurned * w.completedCount));
+    final logs = getAllWorkoutLogs(descending: false);
+    int totalWorkouts = logs.length;
+    int totalCalories =
+        logs.fold(0, (sum, entry) => sum + entry.caloriesBurned);
     int totalDuration =
-        _workouts.fold(0, (sum, w) => sum + (w.duration * w.completedCount));
+        logs.fold(0, (sum, entry) => sum + entry.durationSeconds);
     return {
       'totalWorkouts': totalWorkouts,
       'totalCalories': totalCalories,
@@ -429,51 +482,115 @@ class WorkoutService {
     };
   }
 
-  // Complete a workout on a specific date
-  void completeWorkoutOnDate(String workoutId, DateTime date) {
-    final dateKey = _formatDate(date);
-    if (!_dailyWorkouts.containsKey(dateKey)) {
-      _dailyWorkouts[dateKey] = [];
-    }
-
+  void completeWorkoutOnDate(
+    String workoutId,
+    DateTime date, {
+    int? durationSeconds,
+    int? caloriesBurned,
+    double? progressValue,
+    String progressUnit = '',
+    String resultNote = '',
+  }) {
     final workout = getWorkoutById(workoutId);
     if (workout != null) {
-      _dailyWorkouts[dateKey]!.add(workout);
-      markAsCompleted(workoutId);
+      final entry = _createLogEntry(
+        workout: workout,
+        completedAt: date,
+        durationSeconds: durationSeconds ?? workout.duration,
+        caloriesBurned: caloriesBurned ?? workout.caloriesBurned,
+        progressValue: progressValue,
+        progressUnit: progressUnit,
+        resultNote: resultNote,
+      );
+      _appendLogEntry(entry);
+      _persistState();
     }
   }
 
-  // Get workouts for a specific date
   List<Workout> getWorkoutsForDate(DateTime date) {
-    final dateKey = _formatDate(date);
-    return _dailyWorkouts[dateKey] ?? [];
+    return getWorkoutLogsForDate(date)
+        .map((entry) => getWorkoutById(entry.workoutId))
+        .whereType<Workout>()
+        .toList(growable: false);
   }
 
-  // Get all dates with workouts
+  List<WorkoutLogEntry> getWorkoutLogsForDate(DateTime date) {
+    final dateKey = _formatDate(date);
+    final entries = _dailyWorkoutLogs[dateKey] ?? const [];
+    return List.unmodifiable(entries);
+  }
+
+  List<WorkoutLogEntry> getAllWorkoutLogs({bool descending = true}) {
+    final logs = _dailyWorkoutLogs.values
+        .expand((entries) => entries)
+        .toList(growable: false)
+      ..sort((a, b) => a.completedAt.compareTo(b.completedAt));
+
+    return descending ? logs.reversed.toList(growable: false) : logs;
+  }
+
+  List<WorkoutLogEntry> getWorkoutLogsForWorkout(String workoutId) {
+    final logs = getAllWorkoutLogs(descending: false)
+        .where((entry) => entry.workoutId == workoutId)
+        .toList(growable: false);
+    return logs;
+  }
+
+  List<Workout> getWorkoutsWithProgressLogs() {
+    final workoutIds = <String>{
+      for (final entry in getAllWorkoutLogs(descending: false))
+        if (entry.progressValue != null) entry.workoutId,
+    };
+    return workoutIds
+        .map(getWorkoutById)
+        .whereType<Workout>()
+        .toList(growable: false);
+  }
+
   List<DateTime> getAllTrainingDates() {
-    return _dailyWorkouts.keys
+    return _dailyWorkoutLogs.keys
         .map((dateKey) => DateTime.parse(dateKey))
         .toList()
-      ..sort((a, b) => b.compareTo(a)); // Sort by most recent first
+      ..sort((a, b) => b.compareTo(a));
   }
 
-  // Get daily workout for a specific date
   DailyWorkout? getDailyWorkout(DateTime date) {
-    final workouts = getWorkoutsForDate(date);
-    if (workouts.isEmpty) return null;
+    final entries = getWorkoutLogsForDate(date);
+    if (entries.isEmpty) return null;
 
-    int totalCalories = workouts.fold(0, (sum, w) => sum + w.caloriesBurned);
-    int totalDuration = workouts.fold(0, (sum, w) => sum + w.duration);
+    final workouts = entries
+        .map((entry) => getWorkoutById(entry.workoutId))
+        .whereType<Workout>()
+        .toList(growable: false);
+
+    int totalCalories =
+        entries.fold(0, (sum, entry) => sum + entry.caloriesBurned);
+    int totalDuration =
+        entries.fold(0, (sum, entry) => sum + entry.durationSeconds);
 
     return DailyWorkout(
       date: date,
       exercises: workouts,
+      entries: entries,
       totalCalories: totalCalories,
       totalDuration: totalDuration,
     );
   }
 
-  // Calculate training streak (consecutive days)
+  bool hasWorkoutOnDate(DateTime date) {
+    return getWorkoutLogsForDate(date).isNotEmpty;
+  }
+
+  int getTotalCaloriesForDate(DateTime date) {
+    return getWorkoutLogsForDate(date)
+        .fold(0, (sum, entry) => sum + entry.caloriesBurned);
+  }
+
+  int getTotalDurationForDate(DateTime date) {
+    return getWorkoutLogsForDate(date)
+        .fold(0, (sum, entry) => sum + entry.durationSeconds);
+  }
+
   int getTrainingStreak() {
     final dates = getAllTrainingDates();
     if (dates.isEmpty) return 0;
@@ -490,17 +607,202 @@ class WorkoutService {
     return streak;
   }
 
-  // Check if today has workouts
   bool hasWorkoutToday() {
     final today = DateTime.now();
     return getWorkoutsForDate(today).isNotEmpty;
   }
 
-  // Format date as 'yyyy-MM-dd'
   String _formatDate(DateTime date) {
     final year = date.year;
     final month = date.month.toString().padLeft(2, '0');
     final day = date.day.toString().padLeft(2, '0');
     return '$year-$month-$day';
+  }
+
+  void _incrementCompletedCount(String id) {
+    final index = _workouts.indexWhere((w) => w.id == id);
+    if (index == -1) {
+      return;
+    }
+
+    _workouts[index] = _workouts[index].copyWith(
+      completedCount: _workouts[index].completedCount + 1,
+    );
+  }
+
+  void _restoreFavorites(List<String> favoriteIds) {
+    final favoriteSet = favoriteIds.toSet();
+    for (var index = 0; index < _workouts.length; index++) {
+      _workouts[index] = _workouts[index].copyWith(
+        isFavorite: favoriteSet.contains(_workouts[index].id),
+      );
+    }
+  }
+
+  void _restoreCompletedCounts(String? encodedCounts) {
+    if (encodedCounts == null || encodedCounts.isEmpty) {
+      return;
+    }
+
+    final decodedCounts = jsonDecode(encodedCounts) as Map<String, dynamic>;
+    for (var index = 0; index < _workouts.length; index++) {
+      final completedCount = decodedCounts[_workouts[index].id] as int? ?? 0;
+      _workouts[index] = _workouts[index].copyWith(
+        completedCount: completedCount,
+      );
+    }
+  }
+
+  void _restoreDailyHistory(String? encodedHistory) {
+    if (encodedHistory == null || encodedHistory.isEmpty) {
+      return;
+    }
+
+    final decodedHistory = jsonDecode(encodedHistory) as Map<String, dynamic>;
+    for (final entry in decodedHistory.entries) {
+      final workoutIds = (entry.value as List<dynamic>)
+          .map((item) => item as String)
+          .where((id) => getWorkoutById(id) != null)
+          .toList();
+      _dailyWorkoutIds[entry.key] = workoutIds;
+    }
+  }
+
+  void _restoreWorkoutLogs(String encodedLogs) {
+    _dailyWorkoutIds.clear();
+    _dailyWorkoutLogs.clear();
+
+    final decodedLogs = jsonDecode(encodedLogs) as List<dynamic>;
+    for (final rawEntry in decodedLogs) {
+      final entry = WorkoutLogEntry.fromJson(rawEntry as Map<String, dynamic>);
+      _appendLogEntry(entry, incrementCompletedCount: false);
+    }
+  }
+
+  void _hydrateLogsFromDailyHistory() {
+    final historySnapshot = Map<String, List<String>>.fromEntries(
+      _dailyWorkoutIds.entries.map(
+        (entry) => MapEntry(entry.key, List<String>.from(entry.value)),
+      ),
+    );
+
+    _dailyWorkoutIds.clear();
+    _dailyWorkoutLogs.clear();
+
+    for (final historyEntry in historySnapshot.entries) {
+      final baseDate = DateTime.parse(historyEntry.key);
+      for (var index = 0; index < historyEntry.value.length; index++) {
+        final workout = getWorkoutById(historyEntry.value[index]);
+        if (workout == null) {
+          continue;
+        }
+
+        final entry = _createLogEntry(
+          workout: workout,
+          completedAt: baseDate.add(Duration(hours: 9 + index)),
+          durationSeconds: workout.duration,
+          caloriesBurned: workout.caloriesBurned,
+        );
+        _appendLogEntry(entry, incrementCompletedCount: false);
+      }
+    }
+  }
+
+  void _seedDemoWorkout(
+    DateTime date,
+    Workout workout, {
+    double? progressValue,
+    String progressUnit = '',
+  }) {
+    final entry = _createLogEntry(
+      workout: workout,
+      completedAt: date,
+      durationSeconds: workout.duration,
+      caloriesBurned: workout.caloriesBurned,
+      progressValue: progressValue,
+      progressUnit: progressUnit,
+    );
+    _appendLogEntry(entry);
+  }
+
+  WorkoutLogEntry _createLogEntry({
+    required Workout workout,
+    required DateTime completedAt,
+    required int durationSeconds,
+    required int caloriesBurned,
+    double? progressValue,
+    String progressUnit = '',
+    String resultNote = '',
+  }) {
+    final normalizedDate = DateTime(
+      completedAt.year,
+      completedAt.month,
+      completedAt.day,
+      completedAt.hour == 0 ? 12 : completedAt.hour,
+      completedAt.minute,
+      completedAt.second,
+    );
+    final dateKey = _formatDate(normalizedDate);
+    final nextIndex = _dailyWorkoutLogs[dateKey]?.length ?? 0;
+
+    return WorkoutLogEntry(
+      id: '$dateKey-${workout.id}-$nextIndex',
+      workoutId: workout.id,
+      completedAt: normalizedDate,
+      durationSeconds: durationSeconds,
+      caloriesBurned: caloriesBurned,
+      progressValue: progressValue,
+      progressUnit: progressUnit,
+      resultNote: resultNote,
+    );
+  }
+
+  void _appendLogEntry(
+    WorkoutLogEntry entry, {
+    bool incrementCompletedCount = true,
+  }) {
+    final dateKey = _formatDate(entry.completedAt);
+    final workoutIds = _dailyWorkoutIds.putIfAbsent(dateKey, () => []);
+    final logs = _dailyWorkoutLogs.putIfAbsent(dateKey, () => []);
+    workoutIds.add(entry.workoutId);
+    logs.add(entry);
+
+    if (incrementCompletedCount) {
+      _incrementCompletedCount(entry.workoutId);
+    }
+  }
+
+  void _persistState() {
+    _saveState();
+    notifyListeners();
+  }
+
+  Future<void> _saveState() async {
+    if (_preferences == null) {
+      return;
+    }
+
+    await _preferences!.setStringList(
+      _favoriteWorkoutIdsKey,
+      _workouts.where((w) => w.isFavorite).map((w) => w.id).toList(),
+    );
+    await _preferences!.setString(
+      _completedWorkoutCountsKey,
+      jsonEncode({
+        for (final workout in _workouts) workout.id: workout.completedCount,
+      }),
+    );
+    await _preferences!.setString(
+      _dailyWorkoutHistoryKey,
+      jsonEncode(_dailyWorkoutIds),
+    );
+    await _preferences!.setString(
+      _workoutLogsKey,
+      jsonEncode(
+        getAllWorkoutLogs(descending: false)
+            .map((entry) => entry.toJson())
+            .toList(growable: false),
+      ),
+    );
   }
 }

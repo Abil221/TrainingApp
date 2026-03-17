@@ -24,20 +24,25 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filtered = query.isEmpty
-        ? workoutService.getAllWorkouts()
-        : workoutService.searchWorkouts(query);
-    final gymMatches = filtered
-        .where((w) => w.category.contains('Split') || w.category == 'Fullbody')
-        .length;
-    final homeMatches = filtered.length - gymMatches;
+    return ListenableBuilder(
+      listenable: workoutService,
+      builder: (context, child) {
+        final filtered = query.isEmpty
+            ? workoutService.getAllWorkouts()
+            : workoutService.searchWorkouts(query);
+        final gymMatches = filtered
+            .where(
+              (w) => w.category.contains('Split') || w.category == 'Fullbody',
+            )
+            .length;
+        final homeMatches = filtered.length - gymMatches;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Поиск')),
-      body: AppScreenBackground(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-          children: [
+        return Scaffold(
+          appBar: AppBar(title: const Text('Поиск')),
+          body: AppScreenBackground(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              children: [
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -196,16 +201,14 @@ class _SearchScreenState extends State<SearchScreen> {
               ...filtered.map(
                 (workout) => WorkoutCard(
                   workout: workout,
-                  onFavoriteTap: () {
-                    setState(() {
-                      workoutService.toggleFavorite(workout.id);
-                    });
-                  },
+                  onFavoriteTap: () => workoutService.toggleFavorite(workout.id),
                 ),
               ),
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -1,14 +1,17 @@
 import 'workout.dart';
+import 'workout_log_entry.dart';
 
 class DailyWorkout {
   final DateTime date;
   final List<Workout> exercises;
+  final List<WorkoutLogEntry> entries;
   final int totalCalories;
   final int totalDuration;
 
   DailyWorkout({
     required this.date,
     required this.exercises,
+    required this.entries,
     required this.totalCalories,
     required this.totalDuration,
   });

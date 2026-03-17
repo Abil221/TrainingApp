@@ -10,33 +10,36 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final workoutService = WorkoutService();
-    final stats = workoutService.getStats();
-    final menuEntries = [
-      _MenuEntry(
-        title: 'Зал',
-        subtitle:
-            'Split и Fullbody-программы с акцентом на силу, структуру и прогрессию.',
-        stats: '${workoutService.getGymWorkouts().length} тренировок',
-        icon: Icons.fitness_center,
-        colors: const [Color(0xFF111827), Color(0xFF283548)],
-        screen: const GymScreen(),
-      ),
-      _MenuEntry(
-        title: 'Дома',
-        subtitle:
-            'Сила, кардио и мобильность без сложного оборудования и лишней суеты.',
-        stats: '${workoutService.getHomeWorkouts().length} тренировок',
-        icon: Icons.home_rounded,
-        colors: const [Color(0xFFFF6B35), Color(0xFFE63946)],
-        screen: const HomeWorkoutsScreen(),
-      ),
-    ];
+    return ListenableBuilder(
+      listenable: workoutService,
+      builder: (context, child) {
+        final stats = workoutService.getStats();
+        final menuEntries = [
+          _MenuEntry(
+            title: 'Зал',
+            subtitle:
+                'Split и Fullbody-программы с акцентом на силу, структуру и прогрессию.',
+            stats: '${workoutService.getGymWorkouts().length} тренировок',
+            icon: Icons.fitness_center,
+            colors: const [Color(0xFF111827), Color(0xFF283548)],
+            screen: const GymScreen(),
+          ),
+          _MenuEntry(
+            title: 'Дома',
+            subtitle:
+                'Сила, кардио и мобильность без сложного оборудования и лишней суеты.',
+            stats: '${workoutService.getHomeWorkouts().length} тренировок',
+            icon: Icons.home_rounded,
+            colors: const [Color(0xFFFF6B35), Color(0xFFE63946)],
+            screen: const HomeWorkoutsScreen(),
+          ),
+        ];
 
-    return Scaffold(
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          children: [
+        return Scaffold(
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              children: [
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -149,9 +152,11 @@ class HomeScreen extends StatelessWidget {
                   'Тёмная энергия, чистая типографика и акцент без визуального шума.',
               color: Color(0xFFFF6B35),
             ),
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

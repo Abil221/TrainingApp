@@ -11,12 +11,15 @@ class GymScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final workoutService = WorkoutService();
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Зал')),
-      body: AppScreenBackground(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-          children: [
+    return ListenableBuilder(
+      listenable: workoutService,
+      builder: (context, child) {
+        return Scaffold(
+          appBar: AppBar(title: const Text('Зал')),
+          body: AppScreenBackground(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              children: [
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -120,9 +123,11 @@ class GymScreen extends StatelessWidget {
                 );
               },
             ),
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -228,16 +233,19 @@ class _GymWorkoutListScreenState extends State<GymWorkoutListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final workouts = widget.mode == GymWorkoutListMode.fullbody
-        ? workoutService.getFullBodyWorkouts()
-        : workoutService.getSplitWorkoutsByGroup(widget.splitGroup ?? '');
+    return ListenableBuilder(
+      listenable: workoutService,
+      builder: (context, child) {
+        final workouts = widget.mode == GymWorkoutListMode.fullbody
+            ? workoutService.getFullBodyWorkouts()
+            : workoutService.getSplitWorkoutsByGroup(widget.splitGroup ?? '');
 
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
-      body: AppScreenBackground(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        return Scaffold(
+          appBar: AppBar(title: Text(widget.title)),
+          body: AppScreenBackground(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
               child: Container(
@@ -270,17 +278,16 @@ class _GymWorkoutListScreenState extends State<GymWorkoutListScreen> {
                       itemCount: workouts.length,
                       itemBuilder: (context, index) => WorkoutCard(
                         workout: workouts[index],
-                        onFavoriteTap: () {
-                          setState(() {
-                            workoutService.toggleFavorite(workouts[index].id);
-                          });
-                        },
+                        onFavoriteTap: () =>
+                            workoutService.toggleFavorite(workouts[index].id),
                       ),
                     ),
             ),
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../models/workout_log_entry.dart';
 import '../models/workout.dart';
 import '../services/workout_service.dart';
 import '../widgets/app_surfaces.dart';
@@ -56,26 +57,172 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
   }
 
   void _showCompletionDialog() {
+    _showWorkoutLogDialog(
+      title: 'Отличная работа!',
+      subtitle:
+          'Зафиксируй результат тренировки, чтобы он попал в календарь и графики.',
+      initialDurationSeconds: widget.workout.duration,
+    );
+  }
+
+  void _showWorkoutLogDialog({
+    required String title,
+    required String subtitle,
+    required int initialDurationSeconds,
+  }) {
+    final durationMinutes = (initialDurationSeconds / 60).ceil().clamp(1, 600);
+    final caloriesController = TextEditingController(
+      text: widget.workout.caloriesBurned.toString(),
+    );
+    final durationController = TextEditingController(
+      text: durationMinutes.toString(),
+    );
+    final progressController = TextEditingController();
+    final unitController = TextEditingController(text: _defaultProgressUnit());
+    final noteController = TextEditingController();
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Отличная работа!'),
-        content: const Text('Ты завершил эту тренировку.'),
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                subtitle,
+                style: const TextStyle(height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: durationController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Длительность, мин',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: caloriesController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Калории',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: progressController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Результат',
+                        hintText: 'Например 12 или 42.5',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: unitController,
+                      decoration: const InputDecoration(
+                        labelText: 'Ед. измерения',
+                        hintText: 'повт., кг, км',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noteController,
+                minLines: 2,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Комментарий',
+                  hintText: 'Самочувствие, темп, рабочий вес',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              WorkoutService().markAsCompleted(widget.workout.id);
-            },
-            child: const Text('Сохранить'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Отмена'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Закрыть'),
+            onPressed: () {
+              final durationValue =
+                  int.tryParse(durationController.text.trim()) ??
+                      durationMinutes;
+              final caloriesValue =
+                  int.tryParse(caloriesController.text.trim()) ??
+                      widget.workout.caloriesBurned;
+              final progressValue = double.tryParse(
+                  progressController.text.trim().replaceAll(',', '.'));
+
+              WorkoutService().completeWorkoutOnDate(
+                widget.workout.id,
+                DateTime.now(),
+                durationSeconds: durationValue.clamp(1, 600) * 60,
+                caloriesBurned: caloriesValue.clamp(0, 5000),
+                progressValue: progressValue,
+                progressUnit: unitController.text.trim(),
+                resultNote: noteController.text.trim(),
+              );
+
+              if (!mounted) {
+                return;
+              }
+
+              Navigator.pop(dialogContext);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Результат тренировки сохранён'),
+                ),
+              );
+              setState(() {});
+            },
+            child: const Text('Сохранить'),
           ),
         ],
       ),
     );
+  }
+
+  String _defaultProgressUnit() {
+    if (widget.workout.title.toLowerCase().contains('бег')) {
+      return 'км';
+    }
+    if (widget.workout.description.contains('x')) {
+      return 'повт.';
+    }
+    return 'ед.';
+  }
+
+  int _suggestedDurationSeconds() {
+    final elapsed = widget.workout.duration - remainingSeconds;
+    if (elapsed > 0) {
+      return elapsed;
+    }
+    return widget.workout.duration;
   }
 
   String _getDifficultyColor() {
@@ -103,6 +250,11 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
         (widget.workout.duration - remainingSeconds) / widget.workout.duration;
     final difficultyColor =
         Color(int.parse('0xFF${_getDifficultyColor().substring(1)}'));
+    final recentLogs = WorkoutService()
+        .getWorkoutLogsForWorkout(widget.workout.id)
+        .reversed
+        .take(3)
+        .toList(growable: false);
 
     return Scaffold(
       appBar: AppBar(
@@ -368,6 +520,34 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        _showWorkoutLogDialog(
+                          title: 'Записать результат',
+                          subtitle:
+                              'Сохрани длительность, калории и свой результат по этой тренировке.',
+                          initialDurationSeconds: _suggestedDurationSeconds(),
+                        );
+                      },
+                      icon: const Icon(Icons.edit_note_rounded),
+                      label: const Text('Записать результат'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.onSurface,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: BorderSide(
+                          color: isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFFD1D5DB),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -381,6 +561,22 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                 ),
               ),
             ],
+            if (recentLogs.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _DetailSection(
+                title: 'Последние результаты',
+                child: Column(
+                  children: recentLogs
+                      .map(
+                        (entry) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _ResultLogTile(entry: entry),
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -391,6 +587,84 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
     final mins = seconds ~/ 60;
     final secs = seconds % 60;
     return '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+}
+
+class _ResultLogTile extends StatelessWidget {
+  final WorkoutLogEntry entry;
+
+  const _ResultLogTile({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dateLabel =
+        '${entry.completedAt.day.toString().padLeft(2, '0')}.${entry.completedAt.month.toString().padLeft(2, '0')}';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isDark ? const Color(0xFF243041) : const Color(0xFFE5E7EB),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                dateLabel,
+                style: TextStyle(
+                  color: isDark ? Colors.white : const Color(0xFF111827),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${entry.caloriesBurned} ккал',
+                style: const TextStyle(
+                  color: Color(0xFFFF6B35),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${entry.durationSeconds ~/ 60} мин',
+            style: TextStyle(
+              color: isDark ? const Color(0xFFD1D5DB) : const Color(0xFF6B7280),
+            ),
+          ),
+          if (entry.progressValue != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Результат: ${entry.progressValue} ${entry.progressUnit}'.trim(),
+              style: TextStyle(
+                color: isDark ? Colors.white : const Color(0xFF111827),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (entry.resultNote.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              entry.resultNote,
+              style: TextStyle(
+                color:
+                    isDark ? const Color(0xFFD1D5DB) : const Color(0xFF6B7280),
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 

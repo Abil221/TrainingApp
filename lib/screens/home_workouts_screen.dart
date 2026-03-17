@@ -41,18 +41,21 @@ class _HomeWorkoutsScreenState extends State<HomeWorkoutsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final activeCategory = categories[selectedCategoryIndex];
-    final workouts =
-        workoutService.getWorkoutsByCategory(activeCategory.sourceCategory);
+    return ListenableBuilder(
+      listenable: workoutService,
+      builder: (context, child) {
+        final activeCategory = categories[selectedCategoryIndex];
+        final workouts =
+            workoutService.getWorkoutsByCategory(activeCategory.sourceCategory);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Дома'),
-      ),
-      body: AppScreenBackground(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-          children: [
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Дома'),
+          ),
+          body: AppScreenBackground(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              children: [
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -227,16 +230,14 @@ class _HomeWorkoutsScreenState extends State<HomeWorkoutsScreen> {
               ...workouts.map(
                 (workout) => WorkoutCard(
                   workout: workout,
-                  onFavoriteTap: () {
-                    setState(() {
-                      workoutService.toggleFavorite(workout.id);
-                    });
-                  },
+                  onFavoriteTap: () => workoutService.toggleFavorite(workout.id),
                 ),
               ),
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
