@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/daily_workout.dart';
+import '../models/friend_profile.dart';
 import '../models/workout_log_entry.dart';
 import '../models/workout.dart';
 
@@ -11,6 +12,8 @@ const _favoriteWorkoutIdsKey = 'favorite_workout_ids';
 const _completedWorkoutCountsKey = 'completed_workout_counts';
 const _dailyWorkoutHistoryKey = 'daily_workout_history';
 const _workoutLogsKey = 'workout_logs';
+const _friendProfilesKey = 'friend_profiles';
+const _friendWorkoutLogsKey = 'friend_workout_logs';
 
 const List<String> _gymSplitGroups = [
   'Грудь',
@@ -33,6 +36,11 @@ class WorkoutService extends ChangeNotifier {
 
   final Map<String, List<String>> _dailyWorkoutIds = {};
   final Map<String, List<WorkoutLogEntry>> _dailyWorkoutLogs = {};
+
+  final List<FriendProfile> _friendProfiles = [];
+  final Map<String, List<WorkoutLogEntry>> _friendWorkoutLogs = {};
+  String? _selectedFriendId;
+
   SharedPreferences? _preferences;
 
   Future<void> load() async {
@@ -69,6 +77,36 @@ class WorkoutService extends ChangeNotifier {
     } else {
       _hydrateLogsFromDailyHistory();
       await _saveState();
+    }
+
+    final encodedFriendProfiles = _preferences!.getString(_friendProfilesKey);
+    final encodedFriendLogs = _preferences!.getString(_friendWorkoutLogsKey);
+
+    if (encodedFriendProfiles != null && encodedFriendProfiles.isNotEmpty) {
+      final profiles = jsonDecode(encodedFriendProfiles) as List<dynamic>;
+      _friendProfiles.clear();
+      _friendProfiles.addAll(
+        profiles
+            .map((e) => FriendProfile.fromJson(e as Map<String, dynamic>))
+            .toList(growable: false),
+      );
+    }
+
+    if (encodedFriendLogs != null && encodedFriendLogs.isNotEmpty) {
+      _friendWorkoutLogs.clear();
+      final friendLogs = jsonDecode(encodedFriendLogs) as List<dynamic>;
+      for (final item in friendLogs) {
+        final map = item as Map<String, dynamic>;
+        final friendId = map['friendId'] as String;
+        final entries = (map['logs'] as List<dynamic>)
+            .map((e) => WorkoutLogEntry.fromJson(e as Map<String, dynamic>))
+            .toList(growable: false);
+        _friendWorkoutLogs[friendId] = entries;
+      }
+    }
+
+    if (_friendProfiles.isEmpty) {
+      _ensureDefaultFriendProfiles();
     }
 
     notifyListeners();
@@ -399,6 +437,150 @@ class WorkoutService extends ChangeNotifier {
   }
 
   List<String> getGymSplitGroups() => List.unmodifiable(_gymSplitGroups);
+
+  // --- Competition / Friends support ---
+  List<FriendProfile> getFriendProfiles() {
+    if (_friendProfiles.isEmpty) {
+      _ensureDefaultFriendProfiles();
+    }
+    return List.unmodifiable(_friendProfiles);
+  }
+
+  FriendProfile? getActiveFriend() {
+    final profiles = getFriendProfiles();
+    if (_selectedFriendId != null) {
+      return profiles.firstWhere(
+        (element) => element.id == _selectedFriendId,
+        orElse: () => profiles.first,
+      );
+    }
+    return profiles.isNotEmpty ? profiles.first : null;
+  }
+
+  void setActiveFriend(String id) {
+    if (_friendProfiles.any((f) => f.id == id)) {
+      _selectedFriendId = id;
+      _persistState();
+    }
+  }
+
+  List<WorkoutLogEntry> getFriendWorkoutLogs(String friendId) {
+    return List.unmodifiable(_friendWorkoutLogs[friendId] ?? []);
+  }
+
+  List<DateTime> getFriendTrainingDates(String friendId) {
+    final logs = getFriendWorkoutLogs(friendId);
+    final dates = logs
+        .map((entry) => DateTime(entry.completedAt.year, entry.completedAt.month, entry.completedAt.day))
+        .toSet()
+        .toList(growable: false);
+    dates.sort((a, b) => b.compareTo(a));
+    return dates;
+  }
+
+  Map<String, int> getFriendStats(String friendId) {
+    final logs = getFriendWorkoutLogs(friendId);
+    final totalWorkouts = logs.length;
+    final totalCalories = logs.fold<int>(0, (sum, e) => sum + e.caloriesBurned);
+    final totalDuration = logs.fold<int>(0, (sum, e) => sum + e.durationSeconds);
+    return {
+      'totalWorkouts': totalWorkouts,
+      'totalCalories': totalCalories,
+      'totalDuration': totalDuration,
+    };
+  }
+
+  int getFriendTrainingStreak(String friendId) {
+    final dates = getFriendTrainingDates(friendId);
+    if (dates.isEmpty) return 0;
+    int streak = 1;
+    for (var i = 0; i < dates.length - 1; i++) {
+      final difference = dates[i].difference(dates[i + 1]).inDays;
+      if (difference == 1) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
+  int getSharedTrainingDays(String friendId) {
+    final myDates = getAllTrainingDates()
+        .map((d) => DateTime(d.year, d.month, d.day))
+        .toSet();
+    final friendDates = getFriendTrainingDates(friendId).toSet();
+    return myDates.intersection(friendDates).length;
+  }
+
+  int getSharedTrainingStreak(String friendId) {
+    final myDates = getAllTrainingDates()
+        .map((d) => DateTime(d.year, d.month, d.day))
+        .toSet();
+    final friendDates = getFriendTrainingDates(friendId).toSet();
+    final commonDates = myDates.intersection(friendDates).toList()
+      ..sort((a, b) => b.compareTo(a));
+    if (commonDates.isEmpty) return 0;
+    int streak = 1;
+    for (var i = 0; i < commonDates.length - 1; i++) {
+      final difference = commonDates[i].difference(commonDates[i + 1]).inDays;
+      if (difference == 1) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
+  void _ensureDefaultFriendProfiles() {
+    if (_friendProfiles.isNotEmpty) return;
+
+    _friendProfiles.addAll(
+      const [
+        FriendProfile(id: 'friend_1', name: 'Петя'),
+        FriendProfile(id: 'friend_2', name: 'Саша'),
+      ],
+    );
+
+    _selectedFriendId = _friendProfiles.first.id;
+    _ensureDefaultFriendLogs();
+  }
+
+  void _ensureDefaultFriendLogs() {
+    if (_friendWorkoutLogs.isNotEmpty) return;
+    final userLogs = getAllWorkoutLogs(descending: false);
+    if (userLogs.isEmpty) {
+      return;
+    }
+
+    for (final friend in _friendProfiles) {
+      final friendEntries = userLogs.map((entry) {
+        final hash = entry.id.hashCode;
+        final duration = (entry.durationSeconds * (0.85 + ((hash % 31) / 100))).round();
+        final calories = (entry.caloriesBurned * (0.85 + ((hash % 27) / 100))).round();
+
+        final offsetDay = (hash % 4) - 1;
+        final date = entry.completedAt.add(Duration(days: offsetDay));
+        return WorkoutLogEntry(
+          id: '${friend.id}-${entry.id}',
+          workoutId: entry.workoutId,
+          completedAt: DateTime(date.year, date.month, date.day, 10 + (hash % 5)),
+          durationSeconds: duration,
+          caloriesBurned: calories,
+          progressValue: entry.progressValue == null
+              ? null
+              : (entry.progressValue! * (0.9 + ((hash % 19) / 100))),
+          progressUnit: entry.progressUnit,
+          resultNote: 'Данные друга',
+        );
+      }).toList(growable: false);
+
+      _friendWorkoutLogs[friend.id] = friendEntries;
+    }
+  }
+
+  // --- original methods continue ---
 
   List<Workout> getSplitWorkoutsByGroup(String group) {
     return _workouts.where((w) => w.category == 'Split: $group').toList();
@@ -803,6 +985,23 @@ class WorkoutService extends ChangeNotifier {
             .map((entry) => entry.toJson())
             .toList(growable: false),
       ),
+    );
+
+    await _preferences!.setString(
+      _friendProfilesKey,
+      jsonEncode(_friendProfiles.map((e) => e.toJson()).toList(growable: false)),
+    );
+
+    final friendLogBundle = _friendWorkoutLogs.entries
+        .map((item) => {
+              'friendId': item.key,
+              'logs': item.value.map((e) => e.toJson()).toList(growable: false),
+            })
+        .toList(growable: false);
+
+    await _preferences!.setString(
+      _friendWorkoutLogsKey,
+      jsonEncode(friendLogBundle),
     );
   }
 }

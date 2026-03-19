@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../models/daily_workout.dart';
+import '../models/friend_profile.dart';
 import '../models/workout.dart';
 import '../models/workout_log_entry.dart';
 import '../services/workout_service.dart';
@@ -20,6 +21,7 @@ class _DailyStatsScreenState extends State<DailyStatsScreen> {
   late DateTime _visibleMonth;
   DateTime? _selectedDate;
   String? _selectedProgressWorkoutId;
+  String? _selectedFriendId;
   _AnalyticsRange _selectedRange = _AnalyticsRange.last7Days;
 
   @override
@@ -36,6 +38,11 @@ class _DailyStatsScreenState extends State<DailyStatsScreen> {
     final progressWorkouts = workoutService.getWorkoutsWithProgressLogs();
     if (progressWorkouts.isNotEmpty) {
       _selectedProgressWorkoutId = progressWorkouts.first.id;
+    }
+
+    final friends = workoutService.getFriendProfiles();
+    if (friends.isNotEmpty) {
+      _selectedFriendId = friends.first.id;
     }
   }
 
@@ -75,6 +82,28 @@ class _DailyStatsScreenState extends State<DailyStatsScreen> {
     final selectedDate = _selectedDate ?? _normalizeDate(trainingDates.first);
     final selectedDailyWorkout = workoutService.getDailyWorkout(selectedDate);
     final streak = workoutService.getTrainingStreak();
+
+    final friendProfiles = workoutService.getFriendProfiles();
+    final activeFriend = friendProfiles.isNotEmpty
+        ? friendProfiles.firstWhere(
+            (friend) => friend.id == _selectedFriendId,
+            orElse: () => friendProfiles.first,
+          )
+        : const FriendProfile(id: 'none', name: 'Друг');
+
+    final friendStats = activeFriend.id != 'none'
+        ? workoutService.getFriendStats(activeFriend.id)
+        : {'totalWorkouts': 0, 'totalCalories': 0, 'totalDuration': 0};
+    final friendStreak = activeFriend.id != 'none'
+        ? workoutService.getFriendTrainingStreak(activeFriend.id)
+        : 0;
+    final sharedTrainingDays = activeFriend.id != 'none'
+        ? workoutService.getSharedTrainingDays(activeFriend.id)
+        : 0;
+    final sharedStreak = activeFriend.id != 'none'
+        ? workoutService.getSharedTrainingStreak(activeFriend.id)
+        : 0;
+
     final periodMetrics = _calculatePeriodMetrics(filteredLogs);
     final comparison = _buildComparison(periodMetrics, previousLogs);
     final caloriesSeries = _buildRangeSeries(
@@ -113,6 +142,27 @@ class _DailyStatsScreenState extends State<DailyStatsScreen> {
           totalCalories: overallStats['totalCalories'] ?? 0,
           totalDurationSeconds: overallStats['totalDuration'] ?? 0,
           streak: streak,
+        ),
+        const SizedBox(height: 20),
+        _CompetitionCard(
+          activeFriend: activeFriend,
+          friends: friendProfiles,
+          selectedFriendId: _selectedFriendId,
+          onFriendChanged: (value) {
+            setState(() {
+              _selectedFriendId = value;
+            });
+          },
+          totalWorkouts: overallStats['totalWorkouts'] ?? 0,
+          friendWorkouts: friendStats['totalWorkouts'] ?? 0,
+          totalCalories: overallStats['totalCalories'] ?? 0,
+          friendCalories: friendStats['totalCalories'] ?? 0,
+          totalDuration: overallStats['totalDuration'] ?? 0,
+          friendDuration: friendStats['totalDuration'] ?? 0,
+          streak: streak,
+          friendStreak: friendStreak,
+          sharedDays: sharedTrainingDays,
+          sharedStreak: sharedStreak,
         ),
         const SizedBox(height: 20),
         _AnalyticsFilterBar(
@@ -544,6 +594,166 @@ class _StatsHeroCard extends StatelessWidget {
       return '${(value / 1000).toStringAsFixed(1)}k';
     }
     return '$value';
+  }
+}
+
+class _CompetitionCard extends StatelessWidget {
+  final FriendProfile activeFriend;
+  final List<FriendProfile> friends;
+  final String? selectedFriendId;
+  final ValueChanged<String> onFriendChanged;
+
+  final int totalWorkouts;
+  final int friendWorkouts;
+  final int totalCalories;
+  final int friendCalories;
+  final int totalDuration;
+  final int friendDuration;
+  final int streak;
+  final int friendStreak;
+  final int sharedDays;
+  final int sharedStreak;
+
+  const _CompetitionCard({
+    required this.activeFriend,
+    required this.friends,
+    required this.selectedFriendId,
+    required this.onFriendChanged,
+    required this.totalWorkouts,
+    required this.friendWorkouts,
+    required this.totalCalories,
+    required this.friendCalories,
+    required this.totalDuration,
+    required this.friendDuration,
+    required this.streak,
+    required this.friendStreak,
+    required this.sharedDays,
+    required this.sharedStreak,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A2538) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Соревнование с другом',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: selectedFriendId ?? activeFriend.id,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  ),
+                  items: friends
+                      .map(
+                        (friend) => DropdownMenuItem<String>(
+                          value: friend.id,
+                          child: Text(friend.name),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) {
+                      onFriendChanged(value);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              _SmallMetricTile(
+                label: 'Мои тренировки',
+                value: '$totalWorkouts',
+              ),
+              _SmallMetricTile(
+                label: '${activeFriend.name}',
+                value: '$friendWorkouts',
+              ),
+              _SmallMetricTile(
+                label: 'Калории я',
+                value: '$totalCalories',
+              ),
+              _SmallMetricTile(
+                label: 'Калории ${activeFriend.name}',
+                value: '$friendCalories',
+              ),
+              _SmallMetricTile(
+                label: 'Свой стрик',
+                value: '$streak',
+              ),
+              _SmallMetricTile(
+                label: 'Стрик ${activeFriend.name}',
+                value: '$friendStreak',
+              ),
+              _SmallMetricTile(
+                label: 'Вместе дней',
+                value: '$sharedDays',
+              ),
+              _SmallMetricTile(
+                label: 'Совм. стрик',
+                value: '$sharedStreak',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SmallMetricTile extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _SmallMetricTile({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827).withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      constraints: const BoxConstraints(minWidth: 110),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+          ),
+        ],
+      ),
+    );
   }
 }
 
