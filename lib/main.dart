@@ -1,17 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app_settings.dart';
+import 'screens/auth_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/daily_stats_screen.dart';
 import 'screens/search_screen.dart';
 import 'services/workout_service.dart';
+import 'supabase_config.dart';
 import 'widgets/app_surfaces.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(
+    url: SupabaseConfig.url,
+    anonKey: SupabaseConfig.anonKey,
+  );
   await AppSettings().load();
   await WorkoutService().load();
   runApp(const MyApp());
@@ -44,9 +51,7 @@ class MyApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          home: appSettings.onboardingCompleted.value
-              ? const MainTabs()
-              : const OnboardingScreen(),
+          home: const AuthGate(),
         );
       },
     );
@@ -141,6 +146,33 @@ class MyApp extends StatelessWidget {
   }
 }
 
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = Supabase.instance.client.auth;
+    final appSettings = AppSettings();
+
+    return StreamBuilder<AuthState>(
+      stream: auth.onAuthStateChange,
+      initialData: AuthState(AuthChangeEvent.initialSession,
+          auth.currentSession),
+      builder: (context, snapshot) {
+        final session = snapshot.data?.session;
+
+        if (session == null) {
+          return const AuthScreen();
+        }
+
+        return appSettings.onboardingCompleted.value
+            ? const MainTabs()
+            : const OnboardingScreen();
+      },
+    );
+  }
+}
+
 class MainTabs extends StatefulWidget {
   const MainTabs({super.key});
 
@@ -150,6 +182,7 @@ class MainTabs extends StatefulWidget {
 
 class _MainTabsState extends State<MainTabs> {
   int _selectedIndex = 0;
+  final WorkoutService _workoutService = WorkoutService();
 
   final List<Widget> _screens = const [
     HomeScreen(),
@@ -157,6 +190,34 @@ class _MainTabsState extends State<MainTabs> {
     DailyStatsScreen(),
     ProfileScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _workoutService.socialNotificationMessage.addListener(
+      _handleSocialNotification,
+    );
+  }
+
+  @override
+  void dispose() {
+    _workoutService.socialNotificationMessage.removeListener(
+      _handleSocialNotification,
+    );
+    super.dispose();
+  }
+
+  void _handleSocialNotification() {
+    final message = _workoutService.socialNotificationMessage.value;
+    if (message == null || !mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+    _workoutService.clearSocialNotification();
+  }
 
   void _onItemTapped(int index) {
     setState(() {
@@ -176,7 +237,7 @@ class _MainTabsState extends State<MainTabs> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onItemTapped,
-        destinations: const [
+        destinations: [
           NavigationDestination(
             icon: Icon(Icons.home_rounded),
             label: 'Меню',
@@ -190,7 +251,20 @@ class _MainTabsState extends State<MainTabs> {
             label: 'За день',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_rounded),
+            icon: ValueListenableBuilder<int>(
+              valueListenable: _workoutService.incomingFriendRequestsCount,
+              builder: (context, count, child) {
+                if (count <= 0) {
+                  return child!;
+                }
+
+                return Badge(
+                  label: Text('$count'),
+                  child: child,
+                );
+              },
+              child: const Icon(Icons.person_rounded),
+            ),
             label: 'Профиль',
           ),
         ],

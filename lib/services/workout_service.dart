@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/daily_workout.dart';
 import '../models/friend_profile.dart';
+import '../models/friend_request.dart';
+import '../models/profile_search_result.dart';
 import '../models/workout_log_entry.dart';
 import '../models/workout.dart';
 
@@ -31,6 +35,9 @@ class WorkoutService extends ChangeNotifier {
   }
 
   WorkoutService._internal() {
+    _fallbackWorkouts = _workouts
+        .map((workout) => workout.copyWith())
+        .toList(growable: false);
     _resetWorkoutState();
   }
 
@@ -42,19 +49,136 @@ class WorkoutService extends ChangeNotifier {
   String? _selectedFriendId;
 
   SharedPreferences? _preferences;
+  bool _loaded = false;
+  bool _isCloudSyncInProgress = false;
+  final Map<String, String> _remoteWorkoutIdsByLegacyId = {};
+  late final List<Workout> _fallbackWorkouts;
+  RealtimeChannel? _friendshipsChannel;
+  String? _activeRealtimeUserId;
+  int _lastKnownIncomingRequests = 0;
+
+  final ValueNotifier<int> incomingFriendRequestsCount = ValueNotifier(0);
+  final ValueNotifier<String?> socialNotificationMessage = ValueNotifier(null);
 
   Future<void> load() async {
-    if (_preferences != null) {
+    if (_loaded) {
       return;
     }
 
     _preferences = await SharedPreferences.getInstance();
-    _resetWorkoutState();
+    _loaded = true;
+    Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+      unawaited(_handleAuthStateChanged());
+    });
 
-    final favorites = _preferences!.getStringList(_favoriteWorkoutIdsKey);
-    final completedCounts = _preferences!.getString(_completedWorkoutCountsKey);
-    final dailyHistory = _preferences!.getString(_dailyWorkoutHistoryKey);
-    final encodedWorkoutLogs = _preferences!.getString(_workoutLogsKey);
+    await _handleAuthStateChanged();
+  }
+
+  Future<void> _handleAuthStateChanged() async {
+    await _configureFriendshipsRealtime();
+    await _reloadStateForCurrentUser();
+    await _refreshIncomingRequestsCount(notifyOnIncrease: false);
+  }
+
+  Future<void> _reloadStateForCurrentUser() async {
+    await _loadWorkoutCatalog();
+    await _loadLocalState();
+    await _syncWithSupabase();
+    notifyListeners();
+  }
+
+  Future<void> _loadWorkoutCatalog() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      _restoreFallbackWorkoutCatalog();
+      return;
+    }
+
+    try {
+      final response = await Supabase.instance.client
+          .from('workouts')
+          .select(
+            'legacy_id, title, description, duration_seconds, image_url, category, difficulty, calories_burned, equipment, instructions',
+          )
+          .eq('is_active', true)
+          .order('legacy_id');
+
+      final remoteWorkouts = (response as List<dynamic>)
+          .whereType<Map<String, dynamic>>()
+          .map(_workoutFromRemoteRow)
+          .whereType<Workout>()
+          .toList(growable: false);
+
+      if (remoteWorkouts.isEmpty) {
+        _restoreFallbackWorkoutCatalog();
+        return;
+      }
+
+      _workouts
+        ..clear()
+        ..addAll(remoteWorkouts);
+    } catch (_) {
+      _restoreFallbackWorkoutCatalog();
+    }
+  }
+
+  void _restoreFallbackWorkoutCatalog() {
+    _workouts
+      ..clear()
+      ..addAll(
+        _fallbackWorkouts
+            .map((workout) => workout.copyWith())
+            .toList(growable: false),
+      );
+  }
+
+  Workout? _workoutFromRemoteRow(Map<String, dynamic> row) {
+    final legacyId = row['legacy_id'] as String?;
+    final title = row['title'] as String?;
+    final category = row['category'] as String?;
+
+    if (legacyId == null || title == null || category == null) {
+      return null;
+    }
+
+    return Workout(
+      id: legacyId,
+      title: title,
+      description: row['description'] as String? ?? '',
+      duration: row['duration_seconds'] as int? ?? 0,
+      image: row['image_url'] as String? ?? '',
+      category: category,
+      difficulty: _difficultyFromString(row['difficulty'] as String?),
+      caloriesBurned: row['calories_burned'] as int? ?? 0,
+      equipment: ((row['equipment'] as List<dynamic>?) ?? const [])
+          .map((item) => item as String)
+          .toList(growable: false),
+      instructions: row['instructions'] as String? ?? '',
+    );
+  }
+
+  DifficultyLevel _difficultyFromString(String? value) {
+    switch (value) {
+      case 'easy':
+        return DifficultyLevel.easy;
+      case 'hard':
+        return DifficultyLevel.hard;
+      case 'medium':
+      default:
+        return DifficultyLevel.medium;
+    }
+  }
+
+  Future<void> _loadLocalState() async {
+    _resetWorkoutState();
+    _friendProfiles.clear();
+    _friendWorkoutLogs.clear();
+    _selectedFriendId = null;
+
+    final favorites = _preferences!.getStringList(_storageKey(_favoriteWorkoutIdsKey));
+    final completedCounts = _preferences!.getString(_storageKey(_completedWorkoutCountsKey));
+    final dailyHistory = _preferences!.getString(_storageKey(_dailyWorkoutHistoryKey));
+    final encodedWorkoutLogs = _preferences!.getString(_storageKey(_workoutLogsKey));
 
     final hasSavedState = favorites != null ||
         completedCounts != null ||
@@ -62,9 +186,6 @@ class WorkoutService extends ChangeNotifier {
         encodedWorkoutLogs != null;
 
     if (!hasSavedState) {
-      _initializeDemoData();
-      await _saveState();
-      notifyListeners();
       return;
     }
 
@@ -79,12 +200,13 @@ class WorkoutService extends ChangeNotifier {
       await _saveState();
     }
 
-    final encodedFriendProfiles = _preferences!.getString(_friendProfilesKey);
-    final encodedFriendLogs = _preferences!.getString(_friendWorkoutLogsKey);
+    final encodedFriendProfiles =
+        _preferences!.getString(_storageKey(_friendProfilesKey));
+    final encodedFriendLogs =
+        _preferences!.getString(_storageKey(_friendWorkoutLogsKey));
 
     if (encodedFriendProfiles != null && encodedFriendProfiles.isNotEmpty) {
       final profiles = jsonDecode(encodedFriendProfiles) as List<dynamic>;
-      _friendProfiles.clear();
       _friendProfiles.addAll(
         profiles
             .map((e) => FriendProfile.fromJson(e as Map<String, dynamic>))
@@ -93,7 +215,6 @@ class WorkoutService extends ChangeNotifier {
     }
 
     if (encodedFriendLogs != null && encodedFriendLogs.isNotEmpty) {
-      _friendWorkoutLogs.clear();
       final friendLogs = jsonDecode(encodedFriendLogs) as List<dynamic>;
       for (final item in friendLogs) {
         final map = item as Map<String, dynamic>;
@@ -105,11 +226,6 @@ class WorkoutService extends ChangeNotifier {
       }
     }
 
-    if (_friendProfiles.isEmpty) {
-      _ensureDefaultFriendProfiles();
-    }
-
-    notifyListeners();
   }
 
   void _resetWorkoutState() {
@@ -122,28 +238,6 @@ class WorkoutService extends ChangeNotifier {
         completedCount: 0,
       );
     }
-  }
-
-  void _initializeDemoData() {
-    final today = DateTime.now();
-
-    _seedDemoWorkout(today, _workouts[0],
-        progressValue: 15, progressUnit: 'повт.');
-    _seedDemoWorkout(today, _workouts[1],
-        progressValue: 20, progressUnit: 'повт.');
-
-    final yesterday = today.subtract(const Duration(days: 1));
-    _seedDemoWorkout(yesterday, _workouts[2],
-        progressValue: 3.5, progressUnit: 'км');
-    _seedDemoWorkout(yesterday, _workouts[3],
-        progressValue: 60, progressUnit: 'сек');
-    _seedDemoWorkout(yesterday, _workouts[5]);
-
-    final twoDaysAgo = today.subtract(const Duration(days: 2));
-    _seedDemoWorkout(twoDaysAgo, _workouts[7],
-        progressValue: 32, progressUnit: 'кг');
-    _seedDemoWorkout(twoDaysAgo, _workouts[9],
-        progressValue: 40, progressUnit: 'кг');
   }
 
   final List<Workout> _workouts = [
@@ -440,9 +534,6 @@ class WorkoutService extends ChangeNotifier {
 
   // --- Competition / Friends support ---
   List<FriendProfile> getFriendProfiles() {
-    if (_friendProfiles.isEmpty) {
-      _ensureDefaultFriendProfiles();
-    }
     return List.unmodifiable(_friendProfiles);
   }
 
@@ -533,53 +624,6 @@ class WorkoutService extends ChangeNotifier {
     return streak;
   }
 
-  void _ensureDefaultFriendProfiles() {
-    if (_friendProfiles.isNotEmpty) return;
-
-    _friendProfiles.addAll(
-      const [
-        FriendProfile(id: 'friend_1', name: 'Петя'),
-        FriendProfile(id: 'friend_2', name: 'Саша'),
-      ],
-    );
-
-    _selectedFriendId = _friendProfiles.first.id;
-    _ensureDefaultFriendLogs();
-  }
-
-  void _ensureDefaultFriendLogs() {
-    if (_friendWorkoutLogs.isNotEmpty) return;
-    final userLogs = getAllWorkoutLogs(descending: false);
-    if (userLogs.isEmpty) {
-      return;
-    }
-
-    for (final friend in _friendProfiles) {
-      final friendEntries = userLogs.map((entry) {
-        final hash = entry.id.hashCode;
-        final duration = (entry.durationSeconds * (0.85 + ((hash % 31) / 100))).round();
-        final calories = (entry.caloriesBurned * (0.85 + ((hash % 27) / 100))).round();
-
-        final offsetDay = (hash % 4) - 1;
-        final date = entry.completedAt.add(Duration(days: offsetDay));
-        return WorkoutLogEntry(
-          id: '${friend.id}-${entry.id}',
-          workoutId: entry.workoutId,
-          completedAt: DateTime(date.year, date.month, date.day, 10 + (hash % 5)),
-          durationSeconds: duration,
-          caloriesBurned: calories,
-          progressValue: entry.progressValue == null
-              ? null
-              : (entry.progressValue! * (0.9 + ((hash % 19) / 100))),
-          progressUnit: entry.progressUnit,
-          resultNote: 'Данные друга',
-        );
-      }).toList(growable: false);
-
-      _friendWorkoutLogs[friend.id] = friendEntries;
-    }
-  }
-
   // --- original methods continue ---
 
   List<Workout> getSplitWorkoutsByGroup(String group) {
@@ -597,9 +641,11 @@ class WorkoutService extends ChangeNotifier {
   void toggleFavorite(String id) {
     final index = _workouts.indexWhere((w) => w.id == id);
     if (index != -1) {
+      final updatedFavoriteState = !_workouts[index].isFavorite;
       _workouts[index] =
-          _workouts[index].copyWith(isFavorite: !_workouts[index].isFavorite);
+          _workouts[index].copyWith(isFavorite: updatedFavoriteState);
       _persistState();
+      unawaited(_syncFavoriteToSupabase(id, updatedFavoriteState));
     }
   }
 
@@ -686,6 +732,7 @@ class WorkoutService extends ChangeNotifier {
       );
       _appendLogEntry(entry);
       _persistState();
+      unawaited(_syncLogEntryToSupabase(entry));
     }
   }
 
@@ -890,23 +937,6 @@ class WorkoutService extends ChangeNotifier {
     }
   }
 
-  void _seedDemoWorkout(
-    DateTime date,
-    Workout workout, {
-    double? progressValue,
-    String progressUnit = '',
-  }) {
-    final entry = _createLogEntry(
-      workout: workout,
-      completedAt: date,
-      durationSeconds: workout.duration,
-      caloriesBurned: workout.caloriesBurned,
-      progressValue: progressValue,
-      progressUnit: progressUnit,
-    );
-    _appendLogEntry(entry);
-  }
-
   WorkoutLogEntry _createLogEntry({
     required Workout workout,
     required DateTime completedAt,
@@ -955,7 +985,7 @@ class WorkoutService extends ChangeNotifier {
   }
 
   void _persistState() {
-    _saveState();
+    unawaited(_saveState());
     notifyListeners();
   }
 
@@ -965,21 +995,21 @@ class WorkoutService extends ChangeNotifier {
     }
 
     await _preferences!.setStringList(
-      _favoriteWorkoutIdsKey,
+      _storageKey(_favoriteWorkoutIdsKey),
       _workouts.where((w) => w.isFavorite).map((w) => w.id).toList(),
     );
     await _preferences!.setString(
-      _completedWorkoutCountsKey,
+      _storageKey(_completedWorkoutCountsKey),
       jsonEncode({
         for (final workout in _workouts) workout.id: workout.completedCount,
       }),
     );
     await _preferences!.setString(
-      _dailyWorkoutHistoryKey,
+      _storageKey(_dailyWorkoutHistoryKey),
       jsonEncode(_dailyWorkoutIds),
     );
     await _preferences!.setString(
-      _workoutLogsKey,
+      _storageKey(_workoutLogsKey),
       jsonEncode(
         getAllWorkoutLogs(descending: false)
             .map((entry) => entry.toJson())
@@ -988,7 +1018,7 @@ class WorkoutService extends ChangeNotifier {
     );
 
     await _preferences!.setString(
-      _friendProfilesKey,
+      _storageKey(_friendProfilesKey),
       jsonEncode(_friendProfiles.map((e) => e.toJson()).toList(growable: false)),
     );
 
@@ -1000,8 +1030,658 @@ class WorkoutService extends ChangeNotifier {
         .toList(growable: false);
 
     await _preferences!.setString(
-      _friendWorkoutLogsKey,
+      _storageKey(_friendWorkoutLogsKey),
       jsonEncode(friendLogBundle),
     );
+  }
+
+  String _storageKey(String baseKey) {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null || userId.isEmpty) {
+      return baseKey;
+    }
+    return '$baseKey:$userId';
+  }
+
+  Future<void> _syncWithSupabase() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null || _isCloudSyncInProgress) {
+      return;
+    }
+
+    _isCloudSyncInProgress = true;
+    try {
+      await _refreshRemoteWorkoutMapping();
+      if (_remoteWorkoutIdsByLegacyId.isEmpty) {
+        return;
+      }
+
+      final localFavoriteIds = _workouts
+          .where((workout) => workout.isFavorite)
+          .map((workout) => workout.id)
+          .toSet();
+      final localLogs = getAllWorkoutLogs(descending: false);
+
+      final remoteFavoriteIds = await _fetchRemoteFavoriteIds();
+      final remoteLogs = await _fetchRemoteWorkoutLogs();
+
+      await _pushMissingFavoritesToSupabase(localFavoriteIds, remoteFavoriteIds);
+      await _pushMissingLogsToSupabase(localLogs, remoteLogs);
+
+      final syncedFavoriteIds = await _fetchRemoteFavoriteIds();
+      final syncedLogs = await _fetchRemoteWorkoutLogs();
+      _applyRemoteWorkoutState(syncedFavoriteIds, syncedLogs);
+      await _syncFriendStateFromSupabase();
+      await _saveState();
+    } finally {
+      _isCloudSyncInProgress = false;
+    }
+  }
+
+  Future<void> _syncFriendStateFromSupabase() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      return;
+    }
+
+    final friendshipsResponse = await Supabase.instance.client
+        .from('friendships')
+        .select('id, requester_id, addressee_id, status')
+        .eq('status', 'accepted')
+        .or('requester_id.eq.${currentUser.id},addressee_id.eq.${currentUser.id}');
+
+    final friendshipRows = (friendshipsResponse as List<dynamic>)
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
+
+    final friendIds = friendshipRows
+        .map((row) {
+          final requesterId = row['requester_id'] as String?;
+          final addresseeId = row['addressee_id'] as String?;
+          if (requesterId == null || addresseeId == null) {
+            return null;
+          }
+          return requesterId == currentUser.id ? addresseeId : requesterId;
+        })
+        .whereType<String>()
+        .toSet()
+        .toList(growable: false);
+
+    final friendshipIdByFriendId = {
+      for (final row in friendshipRows)
+        ((row['requester_id'] as String) == currentUser.id
+                ? row['addressee_id']
+                : row['requester_id'])
+            as String: row['id'] as String,
+    };
+
+    _friendProfiles.clear();
+    _friendWorkoutLogs.clear();
+
+    if (friendIds.isEmpty) {
+      _selectedFriendId = null;
+      return;
+    }
+
+    final profilesResponse = await Supabase.instance.client
+        .from('profiles')
+        .select('id, display_name')
+        .inFilter('id', friendIds);
+
+    final profiles = (profilesResponse as List<dynamic>)
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (row) => FriendProfile(
+            id: row['id'] as String,
+            name: row['display_name'] as String? ?? 'Друг',
+            friendshipId: friendshipIdByFriendId[row['id'] as String],
+          ),
+        )
+        .toList(growable: false)
+      ..sort((a, b) => a.name.compareTo(b.name));
+
+    _friendProfiles.addAll(profiles);
+
+    final remoteIdToLegacyId = {
+      for (final entry in _remoteWorkoutIdsByLegacyId.entries)
+        entry.value: entry.key,
+    };
+
+    for (final friend in profiles) {
+      final logsResponse = await Supabase.instance.client
+          .from('workout_logs')
+          .select(
+            'id, workout_id, completed_at, duration_seconds, calories_burned, progress_value, progress_unit, result_note',
+          )
+          .eq('user_id', friend.id)
+          .order('completed_at');
+
+      final friendLogs = (logsResponse as List<dynamic>)
+          .whereType<Map<String, dynamic>>()
+          .map((row) {
+            final legacyId =
+                remoteIdToLegacyId[row['workout_id'] as String? ?? ''];
+            if (legacyId == null) {
+              return null;
+            }
+
+            return WorkoutLogEntry(
+              id: row['id'] as String? ?? '',
+              workoutId: legacyId,
+              completedAt: DateTime.parse(row['completed_at'] as String),
+              durationSeconds: row['duration_seconds'] as int? ?? 0,
+              caloriesBurned: row['calories_burned'] as int? ?? 0,
+              progressValue: (row['progress_value'] as num?)?.toDouble(),
+              progressUnit: row['progress_unit'] as String? ?? '',
+              resultNote: row['result_note'] as String? ?? '',
+            );
+          })
+          .whereType<WorkoutLogEntry>()
+          .toList(growable: false);
+
+      _friendWorkoutLogs[friend.id] = friendLogs;
+    }
+
+    if (_friendProfiles.any((friend) => friend.id == _selectedFriendId)) {
+      return;
+    }
+
+    _selectedFriendId = _friendProfiles.first.id;
+  }
+
+  Future<void> refreshSocialData() async {
+    await _syncFriendStateFromSupabase();
+    await _refreshIncomingRequestsCount(notifyOnIncrease: false);
+    notifyListeners();
+  }
+
+  void clearSocialNotification() {
+    socialNotificationMessage.value = null;
+  }
+
+  Future<List<FriendRequest>> getPendingFriendRequests({
+    required bool outgoing,
+  }) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      return const [];
+    }
+
+    final userColumn = outgoing ? 'requester_id' : 'addressee_id';
+    final profileIdColumn = outgoing ? 'addressee_id' : 'requester_id';
+
+    final response = await Supabase.instance.client
+        .from('friendships')
+        .select('id, requester_id, addressee_id')
+        .eq('status', 'pending')
+        .eq(userColumn, currentUser.id);
+
+    final rows = (response as List<dynamic>)
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
+    if (rows.isEmpty) {
+      return const [];
+    }
+
+    final profileIds = rows
+        .map((row) => row[profileIdColumn] as String?)
+        .whereType<String>()
+        .toList(growable: false);
+
+    final profilesResponse = await Supabase.instance.client
+        .from('profiles')
+        .select('id, display_name, email')
+        .inFilter('id', profileIds);
+
+    final profilesById = {
+      for (final row in (profilesResponse as List<dynamic>)
+          .whereType<Map<String, dynamic>>())
+        row['id'] as String: row,
+    };
+
+    return rows.map((row) {
+      final profileId = row[profileIdColumn] as String;
+      final profile = profilesById[profileId];
+      return FriendRequest(
+        friendshipId: row['id'] as String,
+        profileId: profileId,
+        name: profile?['display_name'] as String? ?? 'Пользователь',
+        email: profile?['email'] as String? ?? '',
+        isOutgoing: outgoing,
+      );
+    }).toList(growable: false);
+  }
+
+  Future<List<ProfileSearchResult>> searchProfiles(String query) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final normalizedQuery = query.trim();
+    if (currentUser == null || normalizedQuery.length < 2) {
+      return const [];
+    }
+
+    final response = await Supabase.instance.client.rpc(
+      'search_profiles',
+      params: {'search_term': normalizedQuery},
+    );
+
+    return (response as List<dynamic>)
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (row) => ProfileSearchResult(
+            profileId: row['id'] as String,
+            displayName: row['display_name'] as String? ?? 'Пользователь',
+            email: row['email'] as String? ?? '',
+            friendshipId: row['friendship_id'] as String?,
+            friendshipStatus: row['friendship_status'] as String?,
+            isOutgoing: row['is_outgoing'] as bool? ?? false,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> sendFriendRequest(String profileId) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null || currentUser.id == profileId) {
+      return;
+    }
+
+    final existing = await Supabase.instance.client
+        .from('friendships')
+        .select('id, requester_id, addressee_id, status')
+        .or(
+          'and(requester_id.eq.${currentUser.id},addressee_id.eq.$profileId),and(requester_id.eq.$profileId,addressee_id.eq.${currentUser.id})',
+        )
+        .maybeSingle();
+
+    if (existing != null) {
+      final status = existing['status'] as String?;
+      final friendshipId = existing['id'] as String?;
+
+      if (status == 'accepted' || status == 'pending') {
+        return;
+      }
+
+      if (friendshipId != null) {
+        await Supabase.instance.client
+            .from('friendships')
+            .delete()
+            .eq('id', friendshipId);
+      }
+
+      if (status == 'declined') {
+        await Supabase.instance.client.from('friendships').insert({
+          'requester_id': currentUser.id,
+          'addressee_id': profileId,
+          'status': 'pending',
+        });
+      }
+    } else {
+      await Supabase.instance.client.from('friendships').insert({
+        'requester_id': currentUser.id,
+        'addressee_id': profileId,
+        'status': 'pending',
+      });
+    }
+
+    await refreshSocialData();
+  }
+
+  Future<void> respondToFriendRequest(
+    String friendshipId, {
+    required bool accept,
+  }) async {
+    await Supabase.instance.client
+        .from('friendships')
+        .update({'status': accept ? 'accepted' : 'declined'})
+        .eq('id', friendshipId);
+
+    await refreshSocialData();
+  }
+
+  Future<void> removeFriendship(String friendshipId) async {
+    await Supabase.instance.client
+        .from('friendships')
+        .delete()
+        .eq('id', friendshipId);
+
+    await refreshSocialData();
+  }
+
+  Future<void> _configureFriendshipsRealtime() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final currentUserId = currentUser?.id;
+
+    if (_activeRealtimeUserId == currentUserId) {
+      return;
+    }
+
+    if (_friendshipsChannel != null) {
+      await Supabase.instance.client.removeChannel(_friendshipsChannel!);
+      _friendshipsChannel = null;
+    }
+
+    _activeRealtimeUserId = currentUserId;
+    _lastKnownIncomingRequests = 0;
+    incomingFriendRequestsCount.value = 0;
+    socialNotificationMessage.value = null;
+
+    if (currentUserId == null) {
+      return;
+    }
+
+    final channel = Supabase.instance.client.channel('friendships:$currentUserId');
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'friendships',
+      callback: (payload) {
+        final newRecord = payload.newRecord;
+        final oldRecord = payload.oldRecord;
+        final requesterId =
+            (newRecord['requester_id'] ?? oldRecord['requester_id']) as String?;
+        final addresseeId =
+            (newRecord['addressee_id'] ?? oldRecord['addressee_id']) as String?;
+
+        final isRelatedToCurrentUser =
+            requesterId == currentUserId || addresseeId == currentUserId;
+        if (!isRelatedToCurrentUser) {
+          return;
+        }
+
+        unawaited(_handleFriendshipRealtimeEvent());
+      },
+    );
+
+    channel.subscribe();
+    _friendshipsChannel = channel;
+  }
+
+  Future<void> _handleFriendshipRealtimeEvent() async {
+    await refreshSocialData();
+    await _refreshIncomingRequestsCount(notifyOnIncrease: true);
+  }
+
+  Future<void> _refreshIncomingRequestsCount({
+    required bool notifyOnIncrease,
+  }) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      incomingFriendRequestsCount.value = 0;
+      _lastKnownIncomingRequests = 0;
+      return;
+    }
+
+    final incoming = await getPendingFriendRequests(outgoing: false);
+    final nextCount = incoming.length;
+
+    if (notifyOnIncrease && nextCount > _lastKnownIncomingRequests) {
+      final latestName = incoming.isNotEmpty ? incoming.first.name : 'пользователь';
+      socialNotificationMessage.value =
+          'Новая заявка в друзья от $latestName';
+    }
+
+    _lastKnownIncomingRequests = nextCount;
+    incomingFriendRequestsCount.value = nextCount;
+  }
+
+  Future<void> _refreshRemoteWorkoutMapping() async {
+    final response = await Supabase.instance.client
+        .from('workouts')
+        .select('id, legacy_id')
+        .eq('is_active', true);
+
+    _remoteWorkoutIdsByLegacyId
+      ..clear()
+      ..addEntries(
+        (response as List<dynamic>)
+            .whereType<Map<String, dynamic>>()
+            .map(
+              (row) => MapEntry(
+                row['legacy_id'] as String? ?? '',
+                row['id'] as String? ?? '',
+              ),
+            )
+            .where((entry) => entry.key.isNotEmpty && entry.value.isNotEmpty),
+      );
+  }
+
+  Future<Set<String>> _fetchRemoteFavoriteIds() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null || _remoteWorkoutIdsByLegacyId.isEmpty) {
+      return <String>{};
+    }
+
+    final remoteIdToLegacyId = {
+      for (final entry in _remoteWorkoutIdsByLegacyId.entries)
+        entry.value: entry.key,
+    };
+
+    final response = await Supabase.instance.client
+        .from('favorites')
+        .select('workout_id')
+        .eq('user_id', currentUser.id);
+
+    return (response as List<dynamic>)
+        .whereType<Map<String, dynamic>>()
+        .map((row) => remoteIdToLegacyId[row['workout_id'] as String? ?? ''])
+        .whereType<String>()
+        .toSet();
+  }
+
+  Future<List<WorkoutLogEntry>> _fetchRemoteWorkoutLogs() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null || _remoteWorkoutIdsByLegacyId.isEmpty) {
+      return const [];
+    }
+
+    final remoteIdToLegacyId = {
+      for (final entry in _remoteWorkoutIdsByLegacyId.entries)
+        entry.value: entry.key,
+    };
+
+    final response = await Supabase.instance.client
+        .from('workout_logs')
+        .select(
+          'id, workout_id, completed_at, duration_seconds, calories_burned, progress_value, progress_unit, result_note',
+        )
+        .eq('user_id', currentUser.id)
+        .order('completed_at');
+
+    return (response as List<dynamic>)
+        .whereType<Map<String, dynamic>>()
+        .map((row) {
+          final legacyId =
+              remoteIdToLegacyId[row['workout_id'] as String? ?? ''];
+          if (legacyId == null) {
+            return null;
+          }
+          return WorkoutLogEntry(
+            id: row['id'] as String? ?? '',
+            workoutId: legacyId,
+            completedAt: DateTime.parse(row['completed_at'] as String),
+            durationSeconds: row['duration_seconds'] as int? ?? 0,
+            caloriesBurned: row['calories_burned'] as int? ?? 0,
+            progressValue: (row['progress_value'] as num?)?.toDouble(),
+            progressUnit: row['progress_unit'] as String? ?? '',
+            resultNote: row['result_note'] as String? ?? '',
+          );
+        })
+        .whereType<WorkoutLogEntry>()
+        .toList(growable: false);
+  }
+
+  Future<void> _pushMissingFavoritesToSupabase(
+    Set<String> localFavoriteIds,
+    Set<String> remoteFavoriteIds,
+  ) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      return;
+    }
+
+    final missingIds = localFavoriteIds.difference(remoteFavoriteIds);
+    if (missingIds.isEmpty) {
+      return;
+    }
+
+    final payload = missingIds
+        .map((id) => _remoteWorkoutIdsByLegacyId[id])
+        .whereType<String>()
+        .map(
+          (remoteWorkoutId) => {
+            'user_id': currentUser.id,
+            'workout_id': remoteWorkoutId,
+          },
+        )
+        .toList(growable: false);
+
+    if (payload.isEmpty) {
+      return;
+    }
+
+    await Supabase.instance.client
+        .from('favorites')
+        .upsert(payload, onConflict: 'user_id,workout_id');
+  }
+
+  Future<void> _pushMissingLogsToSupabase(
+    List<WorkoutLogEntry> localLogs,
+    List<WorkoutLogEntry> remoteLogs,
+  ) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      return;
+    }
+
+    final remoteKeys = remoteLogs.map(_logSyncKey).toSet();
+    final payload = <Map<String, dynamic>>[];
+
+    for (final entry in localLogs) {
+      if (remoteKeys.contains(_logSyncKey(entry))) {
+        continue;
+      }
+
+      final remoteWorkoutId = _remoteWorkoutIdsByLegacyId[entry.workoutId];
+      if (remoteWorkoutId == null) {
+        continue;
+      }
+
+      payload.add({
+        'user_id': currentUser.id,
+        'workout_id': remoteWorkoutId,
+        'completed_at': entry.completedAt.toIso8601String(),
+        'duration_seconds': entry.durationSeconds,
+        'calories_burned': entry.caloriesBurned,
+        'progress_value': entry.progressValue,
+        'progress_unit': entry.progressUnit,
+        'result_note': entry.resultNote,
+      });
+    }
+
+    if (payload.isEmpty) {
+      return;
+    }
+
+    await Supabase.instance.client.from('workout_logs').insert(payload);
+  }
+
+  void _applyRemoteWorkoutState(
+    Set<String> favoriteIds,
+    List<WorkoutLogEntry> logs,
+  ) {
+    _dailyWorkoutIds.clear();
+    _dailyWorkoutLogs.clear();
+
+    for (var index = 0; index < _workouts.length; index++) {
+      _workouts[index] = _workouts[index].copyWith(
+        isFavorite: favoriteIds.contains(_workouts[index].id),
+        completedCount: 0,
+      );
+    }
+
+    for (final entry in logs) {
+      _appendLogEntry(entry);
+    }
+  }
+
+  String _logSyncKey(WorkoutLogEntry entry) {
+    final progressValue =
+        entry.progressValue == null ? '' : entry.progressValue!.toStringAsFixed(2);
+    return [
+      entry.workoutId,
+      entry.completedAt.toIso8601String(),
+      entry.durationSeconds.toString(),
+      entry.caloriesBurned.toString(),
+      progressValue,
+      entry.progressUnit,
+      entry.resultNote,
+    ].join('|');
+  }
+
+  Future<void> _syncFavoriteToSupabase(String workoutId, bool isFavorite) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      return;
+    }
+
+    try {
+      if (_remoteWorkoutIdsByLegacyId.isEmpty) {
+        await _refreshRemoteWorkoutMapping();
+      }
+
+      final remoteWorkoutId = _remoteWorkoutIdsByLegacyId[workoutId];
+      if (remoteWorkoutId == null) {
+        return;
+      }
+
+      if (isFavorite) {
+        await Supabase.instance.client.from('favorites').upsert(
+          {
+            'user_id': currentUser.id,
+            'workout_id': remoteWorkoutId,
+          },
+          onConflict: 'user_id,workout_id',
+        );
+      } else {
+        await Supabase.instance.client
+            .from('favorites')
+            .delete()
+            .eq('user_id', currentUser.id)
+            .eq('workout_id', remoteWorkoutId);
+      }
+    } catch (_) {
+      // Keep local state if the network request fails.
+    }
+  }
+
+  Future<void> _syncLogEntryToSupabase(WorkoutLogEntry entry) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      return;
+    }
+
+    try {
+      if (_remoteWorkoutIdsByLegacyId.isEmpty) {
+        await _refreshRemoteWorkoutMapping();
+      }
+
+      final remoteWorkoutId = _remoteWorkoutIdsByLegacyId[entry.workoutId];
+      if (remoteWorkoutId == null) {
+        return;
+      }
+
+      await Supabase.instance.client.from('workout_logs').insert({
+        'user_id': currentUser.id,
+        'workout_id': remoteWorkoutId,
+        'completed_at': entry.completedAt.toIso8601String(),
+        'duration_seconds': entry.durationSeconds,
+        'calories_burned': entry.caloriesBurned,
+        'progress_value': entry.progressValue,
+        'progress_unit': entry.progressUnit,
+        'result_note': entry.resultNote,
+      });
+    } catch (_) {
+      // Keep local state if the network request fails.
+    }
   }
 }

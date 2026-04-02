@@ -1,0 +1,46 @@
+insert into public.workouts (
+  legacy_id,
+  title,
+  description,
+  duration_seconds,
+  image_url,
+  category,
+  difficulty,
+  calories_burned,
+  equipment,
+  instructions,
+  is_active
+)
+values
+  ('1', 'Отжимания', '3x15', 60, 'assets/pushups.jpg', 'Strength', 'easy', 50, array['Без оборудования'], 'Держи тело прямым. Опускайся вниз, пока грудь почти не коснется пола.', true),
+  ('2', 'Приседания', '3x20', 90, 'assets/squats.jpg', 'Strength', 'medium', 75, array['Без оборудования'], 'Держи грудь раскрытой, а колени направляй по линии стоп. Опускайся до параллели бедер с полом.', true),
+  ('3', 'Бег', '10 мин', 600, 'assets/running.png', 'Cardio', 'medium', 150, array['Кроссовки'], 'Держи ровный темп и расслабленные плечи. Дыши глубоко и стабильно.', true),
+  ('4', 'Планка', '60 сек', 60, 'assets/plank.jpg', 'Flexibility', 'easy', 40, array['Коврик'], 'Сохраняй прямую линию от головы до пяток и держи пресс в напряжении.', true),
+  ('5', 'Берпи', '3x10', 120, 'assets/burpees.jpg', 'Cardio', 'hard', 120, array['Без оборудования'], 'Уйди в упор лежа, сделай отжимание, вернись вперед и выпрыгни вверх.', true),
+  ('6', 'Йога-флоу', '30 мин', 1800, 'assets/yoga.jpg', 'Flexibility', 'easy', 100, array['Коврик'], 'Следуй последовательности в своем темпе и концентрируйся на дыхании.', true),
+  ('7', 'Жим штанги лежа', '4x8', 1500, 'assets/bench_press.jpg', 'Split: Грудь', 'medium', 180, array['Штанга', 'Скамья'], 'Выжимай штангу под контролем, своди лопатки и плотно упрись стопами в пол.', true),
+  ('8', 'Жим гантелей на наклонной', '4x10', 1320, 'assets/incline_press.jpg', 'Split: Грудь', 'medium', 165, array['Гантели', 'Наклонная скамья'], 'Опускай гантели медленно и выжимай вверх без резкого выпрямления локтей.', true),
+  ('9', 'Тяга верхнего блока', '4x12', 1440, 'assets/lat_pulldown.jpg', 'Split: Спина', 'easy', 150, array['Блочный тренажер'], 'Тяни локти вниз к корпусу и не заваливайся сильно назад.', true),
+  ('10', 'Тяга штанги в наклоне', '4x8', 1560, 'assets/barbell_row.jpg', 'Split: Спина', 'hard', 190, array['Штанга'], 'Напряги корпус, веди штангу близко к телу и тяни к нижней части груди.', true),
+  ('11', 'Присед со штангой', '5x5', 1800, 'assets/barbell_squat.jpg', 'Split: Ноги', 'hard', 240, array['Штанга', 'Стойка'], 'Уводи таз назад и вниз, держи грудь раскрытой и дави в пол всей стопой.', true),
+  ('12', 'Румынская тяга', '4x10', 1560, 'assets/romanian_deadlift.jpg', 'Split: Ноги', 'medium', 205, array['Штанга'], 'Отводи таз назад, веди штангу вдоль ног и сохраняй нейтральную спину.', true),
+  ('13', 'Жим гантелей сидя', '4x10', 1380, 'assets/dumbbell_press.jpg', 'Split: Плечи', 'medium', 155, array['Гантели', 'Скамья'], 'Жми строго вверх, держи кисти устойчиво и не переразгибай поясницу.', true),
+  ('14', 'Махи в стороны', '4x15', 1200, 'assets/lateral_raises.jpg', 'Split: Плечи', 'easy', 120, array['Гантели'], 'Поднимай руки до уровня плеч под контролем и оставляй легкий сгиб в локтях.', true),
+  ('15', 'Подъем штанги на бицепс', '4x12', 1140, 'assets/barbell_curl.jpg', 'Split: Руки', 'easy', 110, array['Штанга'], 'Держи локти неподвижно и не раскачивай корпус, чтобы поднять вес.', true),
+  ('16', 'Разгибание на трицепс у блока', '4x12', 1140, 'assets/triceps_pushdown.jpg', 'Split: Руки', 'easy', 115, array['Блочный тренажер'], 'Прижми локти к корпусу и полностью разгибай руки в нижней точке.', true),
+  ('17', 'Круговая силовая Fullbody', '5 кругов', 2100, 'assets/fullbody_strength.jpg', 'Fullbody', 'hard', 320, array['Штанга', 'Гантели', 'Скамья'], 'Чередуй присед, жим, тягу и работу на корпус с коротким отдыхом между кругами.', true),
+  ('18', 'Fullbody на гипертрофию', '4x10 каждое', 2400, 'assets/fullbody_hypertrophy.jpg', 'Fullbody', 'medium', 280, array['Тренажеры', 'Гантели'], 'В каждом круге выполни одно жимовое, одно тяговое, одно упражнение на ноги и одно на плечи.', true),
+  ('19', 'Fullbody для новичка', '3x12 каждое', 1800, 'assets/fullbody_beginner.jpg', 'Fullbody', 'easy', 220, array['Тренажеры', 'Коврик'], 'Сосредоточься на технике с легким сопротивлением для ног, груди, спины и корпуса.', true)
+on conflict (legacy_id) do update
+set
+  title = excluded.title,
+  description = excluded.description,
+  duration_seconds = excluded.duration_seconds,
+  image_url = excluded.image_url,
+  category = excluded.category,
+  difficulty = excluded.difficulty,
+  calories_burned = excluded.calories_burned,
+  equipment = excluded.equipment,
+  instructions = excluded.instructions,
+  is_active = excluded.is_active,
+  updated_at = timezone('utc', now());

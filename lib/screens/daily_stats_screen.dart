@@ -653,7 +653,7 @@ class _CompetitionCard extends StatelessWidget {
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: selectedFriendId ?? activeFriend.id,
+                  initialValue: selectedFriendId ?? activeFriend.id,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     contentPadding:
@@ -686,7 +686,7 @@ class _CompetitionCard extends StatelessWidget {
                 value: '$totalWorkouts',
               ),
               _SmallMetricTile(
-                label: '${activeFriend.name}',
+                label: activeFriend.name,
                 value: '$friendWorkouts',
               ),
               _SmallMetricTile(

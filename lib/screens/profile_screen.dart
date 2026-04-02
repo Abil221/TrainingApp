@@ -5,6 +5,7 @@ import '../models/user_progress.dart';
 import '../services/workout_service.dart';
 import '../widgets/app_surfaces.dart';
 import 'favorites_screen.dart';
+import 'friends_screen.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -17,6 +18,12 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final workoutService = WorkoutService();
   final appSettings = AppSettings();
+
+  @override
+  void initState() {
+    super.initState();
+    workoutService.refreshSocialData();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -226,6 +233,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             : const Color(0xFF111827),
                         onTap: () => _showEditProfileDialog(progress),
                         isDark: isDark,
+                      ),
+                      const SizedBox(height: 12),
+                      ValueListenableBuilder<int>(
+                        valueListenable:
+                            workoutService.incomingFriendRequestsCount,
+                        builder: (context, pendingCount, child) {
+                          return _ActionTile(
+                            icon: Icons.people_alt_rounded,
+                            title: 'Друзья и заявки',
+                            subtitle:
+                                'Поиск пользователей, входящие заявки и список друзей',
+                            color: const Color(0xFF2A9D8F),
+                            badgeText:
+                                pendingCount > 0 ? '$pendingCount новых' : null,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const FriendsScreen(),
+                                ),
+                              );
+                            },
+                            isDark: isDark,
+                          );
+                        },
                       ),
                       const SizedBox(height: 12),
                       _ActionTile(
@@ -490,6 +522,7 @@ class _ActionTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final Color color;
+  final String? badgeText;
   final VoidCallback onTap;
   final bool isDark;
 
@@ -498,6 +531,7 @@ class _ActionTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.color,
+    this.badgeText,
     required this.onTap,
     required this.isDark,
   });
@@ -530,12 +564,40 @@ class _ActionTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: isDark ? Colors.white : const Color(0xFF111827),
-                        fontWeight: FontWeight.w800,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: TextStyle(
+                              color:
+                                  isDark ? Colors.white : const Color(0xFF111827),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        if (badgeText != null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              badgeText!,
+                              style: TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(

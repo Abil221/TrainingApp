@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_settings.dart';
 import '../widgets/app_surfaces.dart';
@@ -171,6 +172,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   trailing:
                       const Icon(Icons.arrow_forward_ios_rounded, size: 16),
                   onTap: _showLanguageDialog,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _settingsSection(
+              title: 'Аккаунт',
+              children: [
+                ListTile(
+                  title: const Text('Текущий пользователь'),
+                  subtitle: Text(
+                    Supabase.instance.client.auth.currentUser?.email ??
+                        'Не авторизован',
+                  ),
+                ),
+                ListTile(
+                  title: const Text('Выйти из аккаунта'),
+                  subtitle: const Text('Завершить текущую сессию Supabase'),
+                  trailing:
+                      const Icon(Icons.logout_rounded, color: Color(0xFFE63946)),
+                  onTap: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    await Supabase.instance.client.auth.signOut();
+                    if (!mounted) {
+                      return;
+                    }
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Вы вышли из аккаунта'),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),

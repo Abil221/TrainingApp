@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'models/user_progress.dart';
 
@@ -18,6 +19,9 @@ class AppSettings {
   static final AppSettings _instance = AppSettings._internal();
 
   factory AppSettings() => _instance;
+
+  SharedPreferences? _preferences;
+  bool _loaded = false;
 
   final ValueNotifier<ThemeMode> themeMode = ValueNotifier(ThemeMode.light);
   final ValueNotifier<String> language = ValueNotifier('Русский');
@@ -42,9 +46,13 @@ class AppSettings {
       ];
 
   Future<void> load() async {
-    final preferences = await SharedPreferences.getInstance();
-    final savedThemeMode = preferences.getString(_themeModeKey);
-    final savedLanguage = preferences.getString(_languageKey);
+    if (_loaded) {
+      return;
+    }
+
+    _preferences = await SharedPreferences.getInstance();
+    final savedThemeMode = _preferences!.getString(_themeModeKey);
+    final savedLanguage = _preferences!.getString(_languageKey);
 
     if (savedThemeMode == ThemeMode.dark.name) {
       themeMode.value = ThemeMode.dark;
@@ -56,53 +64,106 @@ class AppSettings {
       language.value = savedLanguage;
     }
 
-    notificationsEnabled.value = preferences.getBool(_notificationsKey) ?? true;
-    soundEnabled.value = preferences.getBool(_soundKey) ?? true;
+    notificationsEnabled.value = _preferences!.getBool(_notificationsKey) ?? true;
+    soundEnabled.value = _preferences!.getBool(_soundKey) ?? true;
     onboardingCompleted.value =
-        preferences.getBool(_onboardingCompletedKey) ?? false;
+        _preferences!.getBool(_onboardingCompletedKey) ?? false;
 
-    final savedUserProgress = preferences.getString(_userProgressKey);
+    final savedUserProgress = _preferences!.getString(_userProgressKey);
     if (savedUserProgress != null && savedUserProgress.isNotEmpty) {
       userProgress.value = UserProgress.fromJson(
         jsonDecode(savedUserProgress) as Map<String, dynamic>,
       );
     }
+
+    Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+      _syncUserProgressFromSupabase();
+    });
+
+    _loaded = true;
+    await _syncUserProgressFromSupabase();
   }
 
   Future<void> setDarkMode(bool enabled) async {
     themeMode.value = enabled ? ThemeMode.dark : ThemeMode.light;
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(_themeModeKey, themeMode.value.name);
+    await _preferences?.setString(_themeModeKey, themeMode.value.name);
   }
 
   Future<void> setLanguage(String value) async {
     language.value = value;
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(_languageKey, value);
+    await _preferences?.setString(_languageKey, value);
   }
 
   Future<void> setNotificationsEnabled(bool value) async {
     notificationsEnabled.value = value;
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool(_notificationsKey, value);
+    await _preferences?.setBool(_notificationsKey, value);
   }
 
   Future<void> setSoundEnabled(bool value) async {
     soundEnabled.value = value;
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool(_soundKey, value);
+    await _preferences?.setBool(_soundKey, value);
   }
 
   Future<void> completeOnboarding() async {
     onboardingCompleted.value = true;
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool(_onboardingCompletedKey, true);
+    await _preferences?.setBool(_onboardingCompletedKey, true);
   }
 
   Future<void> updateUserProgress(UserProgress value) async {
     userProgress.value = value;
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(_userProgressKey, jsonEncode(value.toJson()));
+    await _cacheUserProgress(value);
+
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      return;
+    }
+
+    await Supabase.instance.client.from('profiles').upsert({
+      'id': currentUser.id,
+      'email': currentUser.email,
+      'display_name': value.userName,
+      'fitness_level': value.fitnessLevel,
+      'height': value.height,
+      'weight': value.weight,
+    });
+  }
+
+  Future<void> _syncUserProgressFromSupabase() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+
+    if (currentUser == null) {
+      userProgress.value = const UserProgress();
+      await _preferences?.remove(_userProgressKey);
+      return;
+    }
+
+    try {
+      final response = await Supabase.instance.client
+          .from('profiles')
+          .select('display_name, fitness_level, height, weight')
+          .eq('id', currentUser.id)
+          .maybeSingle();
+
+      if (response == null) {
+        return;
+      }
+
+      final remoteProgress = UserProgress(
+        userName: response['display_name'] as String? ?? 'Атлет',
+        fitnessLevel: response['fitness_level'] as String? ?? 'Средний',
+        height: response['height'] as int? ?? 175,
+        weight: response['weight'] as int? ?? 75,
+      );
+
+      userProgress.value = remoteProgress;
+      await _cacheUserProgress(remoteProgress);
+    } catch (_) {
+      // Keep local cache if network sync is unavailable.
+    }
+  }
+
+  Future<void> _cacheUserProgress(UserProgress value) async {
+    await _preferences?.setString(_userProgressKey, jsonEncode(value.toJson()));
   }
 
   Locale _languageToLocale(String value) {

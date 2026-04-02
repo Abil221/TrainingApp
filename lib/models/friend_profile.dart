@@ -1,13 +1,19 @@
 class FriendProfile {
   final String id;
   final String name;
+  final String? friendshipId;
 
-  const FriendProfile({required this.id, required this.name});
+  const FriendProfile({
+    required this.id,
+    required this.name,
+    this.friendshipId,
+  });
 
-  FriendProfile copyWith({String? id, String? name}) {
+  FriendProfile copyWith({String? id, String? name, String? friendshipId}) {
     return FriendProfile(
       id: id ?? this.id,
       name: name ?? this.name,
+      friendshipId: friendshipId ?? this.friendshipId,
     );
   }
 
@@ -15,6 +21,7 @@ class FriendProfile {
     return {
       'id': id,
       'name': name,
+      'friendshipId': friendshipId,
     };
   }
 
@@ -22,6 +29,7 @@ class FriendProfile {
     return FriendProfile(
       id: json['id'] as String,
       name: json['name'] as String,
+      friendshipId: json['friendshipId'] as String?,
     );
   }
 }
