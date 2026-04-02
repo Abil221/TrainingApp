@@ -676,47 +676,162 @@ class _CompetitionCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              _SmallMetricTile(
-                label: 'Мои тренировки',
-                value: '$totalWorkouts',
-              ),
-              _SmallMetricTile(
-                label: activeFriend.name,
-                value: '$friendWorkouts',
-              ),
-              _SmallMetricTile(
-                label: 'Калории я',
-                value: '$totalCalories',
-              ),
-              _SmallMetricTile(
-                label: 'Калории ${activeFriend.name}',
-                value: '$friendCalories',
-              ),
-              _SmallMetricTile(
-                label: 'Свой стрик',
-                value: '$streak',
-              ),
-              _SmallMetricTile(
-                label: 'Стрик ${activeFriend.name}',
-                value: '$friendStreak',
-              ),
-              _SmallMetricTile(
-                label: 'Вместе дней',
-                value: '$sharedDays',
-              ),
-              _SmallMetricTile(
-                label: 'Совм. стрик',
-                value: '$sharedStreak',
-              ),
-            ],
+          const SizedBox(height: 16),
+          _ComparisonChartRow(
+            label: 'Тренировки',
+            yourValue: totalWorkouts,
+            friendValue: friendWorkouts,
+            yourLabel: 'Мои',
+            friendLabel: activeFriend.name,
+          ),
+          const SizedBox(height: 12),
+          _ComparisonChartRow(
+            label: 'Калории',
+            yourValue: totalCalories,
+            friendValue: friendCalories,
+            yourLabel: 'Мои',
+            friendLabel: activeFriend.name,
+          ),
+          const SizedBox(height: 12),
+          _ComparisonChartRow(
+            label: 'Время (мин)',
+            yourValue: totalDuration,
+            friendValue: friendDuration,
+            yourLabel: 'Мои',
+            friendLabel: activeFriend.name,
+          ),
+          const SizedBox(height: 12),
+          _ComparisonChartRow(
+            label: 'Стрик',
+            yourValue: streak,
+            friendValue: friendStreak,
+            yourLabel: 'Свой',
+            friendLabel: activeFriend.name,
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ComparisonChartRow extends StatelessWidget {
+  final String label;
+  final int yourValue;
+  final int friendValue;
+  final String yourLabel;
+  final String friendLabel;
+
+  const _ComparisonChartRow({
+    required this.label,
+    required this.yourValue,
+    required this.friendValue,
+    required this.yourLabel,
+    required this.friendLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue = math.max(yourValue, friendValue).toDouble();
+    final maxValueDisplay = maxValue == 0 ? 1 : maxValue;
+    
+    final yourPercent = yourValue / maxValueDisplay;
+    final friendPercent = friendValue / maxValueDisplay;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF6B7280),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        yourLabel,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        '$yourValue',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: yourPercent,
+                      minHeight: 8,
+                      backgroundColor: const Color(0xFF111827).withValues(alpha: 0.1),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        isDark ? const Color(0xFF60A5FA) : const Color(0xFF3B82F6),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        friendLabel,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        '$friendValue',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: friendPercent,
+                      minHeight: 8,
+                      backgroundColor: const Color(0xFF111827).withValues(alpha: 0.1),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        isDark ? const Color(0xFFFCA5A5) : const Color(0xFFF87171),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
