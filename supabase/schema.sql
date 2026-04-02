@@ -271,3 +271,259 @@ drop policy if exists "friendships_delete_participant" on public.friendships;
 create policy "friendships_delete_participant"
   on public.friendships for delete
   using (auth.uid() = requester_id or auth.uid() = addressee_id);
+
+-- ============ ACHIEVEMENTS ============
+create table if not exists public.achievements (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  description text,
+  icon_name text not null,
+  criteria_type text not null check (criteria_type in ('total_workouts', 'calories_burned', 'streak_days', 'specific_workout', 'level_reached')),
+  criteria_value integer not null default 1,
+  reward_xp integer not null default 50,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create table if not exists public.user_achievements (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  achievement_id uuid not null references public.achievements (id) on delete cascade,
+  unlocked_at timestamptz not null default timezone('utc', now()),
+  unique (user_id, achievement_id)
+);
+
+create index if not exists idx_user_achievements_user
+  on public.user_achievements (user_id);
+
+-- ============ USER LEVELS & XP ============
+create table if not exists public.user_levels (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  current_level integer not null default 1 check (current_level between 1 and 100),
+  total_xp integer not null default 0,
+  xp_for_next_level integer not null default 1000,
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+-- ============ WORKOUT PLANS ============
+create table if not exists public.workout_plans (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  name text not null,
+  description text,
+  duration_weeks integer not null default 4 check (duration_weeks between 1 and 52),
+  is_active boolean not null default true,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+create table if not exists public.workout_plan_days (
+  id uuid primary key default gen_random_uuid(),
+  plan_id uuid not null references public.workout_plans (id) on delete cascade,
+  day_of_week integer not null check (day_of_week between 0 and 6),
+  workout_id uuid not null references public.workouts (id) on delete restrict,
+  order_in_day integer not null default 1,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create index if not exists idx_workout_plan_days_plan
+  on public.workout_plan_days (plan_id);
+
+create index if not exists idx_workout_plan_days_workout
+  on public.workout_plan_days (workout_id);
+
+-- ============ USER GOALS ============
+create table if not exists public.user_goals (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  goal_type text not null check (goal_type in ('weight_loss', 'muscle_gain', 'endurance', 'strength', 'flexibility')),
+  name text not null,
+  description text,
+  target_value numeric(10, 2) not null,
+  current_value numeric(10, 2) not null,
+  unit text not null,
+  deadline date not null,
+  is_completed boolean not null default false,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+create index if not exists idx_user_goals_user
+  on public.user_goals (user_id, is_completed);
+
+-- ============ WEIGHT HISTORY ============
+create table if not exists public.weight_history (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  weight integer not null check (weight between 20 and 400),
+  recorded_at timestamptz not null default timezone('utc', now()),
+  notes text
+);
+
+create index if not exists idx_weight_history_user_date
+  on public.weight_history (user_id, recorded_at desc);
+
+-- ============ ENABLE RLS & POLICIES ============
+alter table public.achievements enable row level security;
+alter table public.user_achievements enable row level security;
+alter table public.user_levels enable row level security;
+alter table public.workout_plans enable row level security;
+alter table public.workout_plan_days enable row level security;
+alter table public.user_goals enable row level security;
+alter table public.weight_history enable row level security;
+
+-- Achievements are public
+drop policy if exists "achievements_select_authenticated" on public.achievements;
+create policy "achievements_select_authenticated"
+  on public.achievements for select
+  using (auth.role() = 'authenticated');
+
+-- User achievements
+drop policy if exists "user_achievements_select_own" on public.user_achievements;
+create policy "user_achievements_select_own"
+  on public.user_achievements for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "user_achievements_insert_own" on public.user_achievements;
+create policy "user_achievements_insert_own"
+  on public.user_achievements for insert
+  with check (auth.uid() = user_id);
+
+-- User levels
+drop policy if exists "user_levels_select_own" on public.user_levels;
+create policy "user_levels_select_own"
+  on public.user_levels for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "user_levels_select_friends" on public.user_levels;
+create policy "user_levels_select_friends"
+  on public.user_levels for select
+  using (public.are_friends(auth.uid(), user_id));
+
+drop policy if exists "user_levels_insert_own" on public.user_levels;
+create policy "user_levels_insert_own"
+  on public.user_levels for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "user_levels_update_own" on public.user_levels;
+create policy "user_levels_update_own"
+  on public.user_levels for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- Workout plans
+drop policy if exists "workout_plans_select_own" on public.workout_plans;
+create policy "workout_plans_select_own"
+  on public.workout_plans for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "workout_plans_insert_own" on public.workout_plans;
+create policy "workout_plans_insert_own"
+  on public.workout_plans for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "workout_plans_update_own" on public.workout_plans;
+create policy "workout_plans_update_own"
+  on public.workout_plans for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "workout_plans_delete_own" on public.workout_plans;
+create policy "workout_plans_delete_own"
+  on public.workout_plans for delete
+  using (auth.uid() = user_id);
+
+-- Workout plan days
+drop policy if exists "workout_plan_days_select_own" on public.workout_plan_days;
+create policy "workout_plan_days_select_own"
+  on public.workout_plan_days for select
+  using (
+    exists (
+      select 1 from public.workout_plans wp
+      where wp.id = plan_id and wp.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "workout_plan_days_insert_own" on public.workout_plan_days;
+create policy "workout_plan_days_insert_own"
+  on public.workout_plan_days for insert
+  with check (
+    exists (
+      select 1 from public.workout_plans wp
+      where wp.id = plan_id and wp.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "workout_plan_days_update_own" on public.workout_plan_days;
+create policy "workout_plan_days_update_own"
+  on public.workout_plan_days for update
+  using (
+    exists (
+      select 1 from public.workout_plans wp
+      where wp.id = plan_id and wp.user_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.workout_plans wp
+      where wp.id = plan_id and wp.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "workout_plan_days_delete_own" on public.workout_plan_days;
+create policy "workout_plan_days_delete_own"
+  on public.workout_plan_days for delete
+  using (
+    exists (
+      select 1 from public.workout_plans wp
+      where wp.id = plan_id and wp.user_id = auth.uid()
+    )
+  );
+
+-- User goals
+drop policy if exists "user_goals_select_own" on public.user_goals;
+create policy "user_goals_select_own"
+  on public.user_goals for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "user_goals_insert_own" on public.user_goals;
+create policy "user_goals_insert_own"
+  on public.user_goals for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "user_goals_update_own" on public.user_goals;
+create policy "user_goals_update_own"
+  on public.user_goals for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "user_goals_delete_own" on public.user_goals;
+create policy "user_goals_delete_own"
+  on public.user_goals for delete
+  using (auth.uid() = user_id);
+
+-- Weight history
+drop policy if exists "weight_history_select_own" on public.weight_history;
+create policy "weight_history_select_own"
+  on public.weight_history for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "weight_history_insert_own" on public.weight_history;
+create policy "weight_history_insert_own"
+  on public.weight_history for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "weight_history_delete_own" on public.weight_history;
+create policy "weight_history_delete_own"
+  on public.weight_history for delete
+  using (auth.uid() = user_id);
+
+-- ============ TRIGGERS FOR UPDATED_AT ============
+drop trigger if exists workout_plans_set_updated_at on public.workout_plans;
+create trigger workout_plans_set_updated_at
+  before update on public.workout_plans
+  for each row execute procedure public.set_updated_at();
+
+drop trigger if exists user_goals_set_updated_at on public.user_goals;
+create trigger user_goals_set_updated_at
+  before update on public.user_goals
+  for each row execute procedure public.set_updated_at();

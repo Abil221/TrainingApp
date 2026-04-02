@@ -7,6 +7,9 @@ import '../widgets/app_surfaces.dart';
 import 'favorites_screen.dart';
 import 'friends_screen.dart';
 import 'settings_screen.dart';
+import 'achievements_screen.dart';
+import 'workout_plans_screen.dart';
+import 'goals_and_progress_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -258,6 +261,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             isDark: isDark,
                           );
                         },
+                      ),
+                      const SizedBox(height: 12),
+                      _ActionTile(
+                        icon: Icons.emoji_events_rounded,
+                        title: 'Достижения',
+                        subtitle: 'Разблокируйте достижения и повышайте уровень',
+                        color: const Color(0xFFFFA500),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AchievementsScreen(),
+                            ),
+                          );
+                        },
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 12),
+                      _ActionTile(
+                        icon: Icons.fitness_center_rounded,
+                        title: 'Планы тренировок',
+                        subtitle: 'Создавайте и управляйте своими программами',
+                        color: const Color(0xFF4CAF50),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const WorkoutPlansScreen(),
+                            ),
+                          );
+                        },
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 12),
+                      _ActionTile(
+                        icon: Icons.flag_rounded,
+                        title: 'Цели и прогресс',
+                        subtitle: 'Отслеживайте вес и достигайте целей',
+                        color: const Color(0xFF2196F3),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const GoalsScreen(),
+                            ),
+                          );
+                        },
+                        isDark: isDark,
                       ),
                       const SizedBox(height: 12),
                       _ActionTile(

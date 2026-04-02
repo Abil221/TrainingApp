@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app_settings.dart';
@@ -10,6 +11,9 @@ import 'screens/profile_screen.dart';
 import 'screens/daily_stats_screen.dart';
 import 'screens/search_screen.dart';
 import 'services/workout_service.dart';
+import 'services/achievement_service.dart';
+import 'services/goal_service.dart';
+import 'services/workout_plan_service.dart';
 import 'supabase_config.dart';
 import 'widgets/app_surfaces.dart';
 
@@ -165,10 +169,43 @@ class AuthGate extends StatelessWidget {
           return const AuthScreen();
         }
 
-        return appSettings.onboardingCompleted.value
-            ? const MainTabs()
-            : const OnboardingScreen();
+        final userId = session.user.id;
+
+        return _ProvidersWrapper(
+          userId: userId,
+          child: appSettings.onboardingCompleted.value
+              ? const MainTabs()
+              : const OnboardingScreen(),
+        );
       },
+    );
+  }
+}
+
+class _ProvidersWrapper extends StatelessWidget {
+  final String userId;
+  final Widget child;
+
+  const _ProvidersWrapper({
+    required this.userId,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) => AchievementService()..loadAchievements(userId),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => GoalService()..loadGoals(userId),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => WorkoutPlanService()..loadPlans(userId),
+        ),
+      ],
+      child: child,
     );
   }
 }
