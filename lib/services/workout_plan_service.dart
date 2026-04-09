@@ -14,6 +14,13 @@ class WorkoutPlanService extends ChangeNotifier {
   List<WorkoutPlan> get userPlans => _userPlans;
   WorkoutPlan? get activePlan => _activePlan;
 
+  String? get currentUserId {
+    final user = _supabase.auth.currentUser;
+    return user?.id;
+  }
+
+  bool get isUserAuthenticated => currentUserId != null;
+
   Future<void> loadPlans(String userId) async {
     if (_loaded && _loadedUserId == userId) {
       return;
@@ -51,16 +58,22 @@ class WorkoutPlanService extends ChangeNotifier {
   }
 
   Future<WorkoutPlan> createPlan({
-    required String userId,
+    String? userId,
     required String name,
     required String description,
     required int durationWeeks,
   }) async {
     try {
+      final uid = userId ?? currentUserId;
+      if (uid == null || uid.isEmpty) {
+        debugPrint('[WorkoutPlanService] ERROR: User not authenticated');
+        throw StateError('User not authenticated');
+      }
+      debugPrint('[WorkoutPlanService] Creating plan for user: $uid, name: $name');
       final result = await _supabase
           .from('workout_plans')
           .insert({
-            'user_id': userId,
+            'user_id': uid,
             'name': name,
             'description': description,
             'duration_weeks': durationWeeks,
@@ -69,6 +82,7 @@ class WorkoutPlanService extends ChangeNotifier {
           })
           .select()
           .single();
+      debugPrint('[WorkoutPlanService] Plan created successfully: ${result['id']}');
 
       final plan = WorkoutPlan.fromJson(result);
       _userPlans.add(plan);

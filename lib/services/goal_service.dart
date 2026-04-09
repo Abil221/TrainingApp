@@ -18,6 +18,13 @@ class GoalService extends ChangeNotifier {
   List<UserGoal> get allGoals => [..._activeGoals, ..._completedGoals];
   List<WeightEntry> get weightHistory => _weightHistory;
 
+  String? get currentUserId {
+    final user = _supabase.auth.currentUser;
+    return user?.id;
+  }
+
+  bool get isUserAuthenticated => currentUserId != null;
+
   Future<void> loadGoals(String userId) async {
     if (_loaded && _loadedUserId == userId) {
       return;
@@ -70,7 +77,7 @@ class GoalService extends ChangeNotifier {
   }
 
   Future<UserGoal> createGoal({
-    required String userId,
+    String? userId,
     required GoalType goalType,
     required String name,
     required String description,
@@ -80,10 +87,16 @@ class GoalService extends ChangeNotifier {
     required DateTime deadline,
   }) async {
     try {
+      final uid = userId ?? currentUserId;
+      if (uid == null || uid.isEmpty) {
+        debugPrint('[GoalService] ERROR: User not authenticated');
+        throw StateError('User not authenticated');
+      }
+      debugPrint('[GoalService] Creating goal for user: $uid, name: $name');
       final result = await _supabase
           .from('user_goals')
           .insert({
-            'user_id': userId,
+            'user_id': uid,
             'goal_type': goalType.value,
             'name': name,
             'description': description,
@@ -95,6 +108,7 @@ class GoalService extends ChangeNotifier {
           })
           .select()
           .single();
+      debugPrint('[GoalService] Goal created successfully: ${result['id']}');
 
       final goal = UserGoal.fromJson(result);
       _activeGoals.add(goal);
@@ -177,15 +191,20 @@ class GoalService extends ChangeNotifier {
   }
 
   Future<WeightEntry> recordWeight(
-    String userId,
+    String? userId,
     int weight, {
     String? notes,
   }) async {
     try {
+      final uid = userId ?? currentUserId;
+      if (uid == null || uid.isEmpty) {
+        debugPrint('Error: User not authenticated. Cannot record weight without user ID');
+        throw StateError('User not authenticated');
+      }
       final result = await _supabase
           .from('weight_history')
           .insert({
-            'user_id': userId,
+            'user_id': uid,
             'weight': weight,
             'recorded_at': DateTime.now().toIso8601String(),
             'notes': notes,

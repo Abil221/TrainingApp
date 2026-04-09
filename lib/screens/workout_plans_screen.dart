@@ -256,12 +256,19 @@ class _WorkoutPlansScreenState extends State<WorkoutPlansScreen> {
               onPressed: () {
                 if (nameController.text.isNotEmpty) {
                   context.read<WorkoutPlanService>().createPlan(
-                        userId: '', // Заполняется сервисом
                         name: nameController.text,
                         description: descriptionController.text,
                         durationWeeks: weeks,
-                      );
-                  Navigator.pop(context);
+                      ).then((_) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('План создан!')),
+                        );
+                      }).catchError((e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Ошибка: $e')),
+                        );
+                      });
                 }
               },
               child: const Text('Создать'),

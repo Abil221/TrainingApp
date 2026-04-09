@@ -431,6 +431,39 @@ class _GoalsScreenState extends State<GoalsScreen>
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: () async {
+                    final selectedDate = await showDatePicker(
+                      context: context,
+                      initialDate: deadline,
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (selectedDate != null) {
+                      setState(() {
+                        deadline = selectedDate;
+                      });
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Дедлайн: ${deadline.day}.${deadline.month}.${deadline.year}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        const Icon(Icons.calendar_today, size: 20),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -443,7 +476,6 @@ class _GoalsScreenState extends State<GoalsScreen>
               onPressed: () {
                 if (name.isNotEmpty && targetValue > 0) {
                   context.read<GoalService>().createGoal(
-                        userId: '',
                         goalType: GoalType.fromString(goalType),
                         name: name,
                         description: description,
@@ -451,8 +483,16 @@ class _GoalsScreenState extends State<GoalsScreen>
                         currentValue: currentValue.toDouble(),
                         unit: unit,
                         deadline: deadline,
-                      );
-                  Navigator.pop(context);
+                      ).then((_) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Цель создана!')),
+                        );
+                      }).catchError((e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Ошибка: $e')),
+                        );
+                      });
                 }
               },
               child: const Text('Создать'),
@@ -554,11 +594,19 @@ class _GoalsScreenState extends State<GoalsScreen>
             onPressed: () {
               if (weight > 0) {
                 context.read<GoalService>().recordWeight(
-                      '',
+                      null,
                       weight,
                       notes: notes.isNotEmpty ? notes : null,
-                    );
-                Navigator.pop(context);
+                    ).then((_) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Вес записан!')),
+                      );
+                    }).catchError((e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Ошибка: $e')),
+                      );
+                    });
               }
             },
             child: const Text('Сохранить'),

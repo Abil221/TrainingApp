@@ -11,6 +11,7 @@ import '../models/friend_request.dart';
 import '../models/profile_search_result.dart';
 import '../models/workout_log_entry.dart';
 import '../models/workout.dart';
+import 'achievement_service.dart';
 
 const _favoriteWorkoutIdsKey = 'favorite_workout_ids';
 const _completedWorkoutCountsKey = 'completed_workout_counts';
@@ -737,6 +738,9 @@ class WorkoutService extends ChangeNotifier {
       _appendLogEntry(entry);
       _persistState();
       unawaited(_syncLogEntryToSupabase(entry));
+      
+      // Проверить достижения после завершения тренировки
+      unawaited(_checkAchievementsAfterWorkout());
     }
   }
 
@@ -1692,5 +1696,69 @@ class WorkoutService extends ChangeNotifier {
     } catch (_) {
       // Keep local state if the network request fails.
     }
+  }
+
+  /// Проверить и разблокировать достижения после завершения тренировки
+  Future<void> _checkAchievementsAfterWorkout() async {
+    try {
+      final currentUser = Supabase.instance.client.auth.currentUser;
+      if (currentUser == null) return;
+
+      final stats = getStats();
+      final totalWorkouts = stats['totalWorkouts'] ?? 0;
+      final totalCalories = stats['totalCalories'] ?? 0;
+
+      // Получаем текущую полосу (streak) - количество дней подряд с тренировками
+      final currentStreak = _calculateCurrentStreak();
+
+      // Получаем AchievementService и проверяем достижения
+      final achievementService = AchievementService();
+      await achievementService.checkAndUnlockAchievements(
+        currentUser.id,
+        totalWorkouts,
+        totalCalories,
+        currentStreak,
+      );
+    } catch (e) {
+      debugPrint('Error checking achievements after workout: $e');
+    }
+  }
+
+  /// Рассчитать текущую полосу (дни подряд с тренировками)
+  int _calculateCurrentStreak() {
+    if (_dailyWorkoutLogs.isEmpty) return 0;
+
+    final dates = _dailyWorkoutLogs.keys
+        .map((dateStr) {
+          try {
+            return DateTime.parse(dateStr);
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<DateTime>()
+        .toList();
+
+    if (dates.isEmpty) return 0;
+
+    dates.sort((a, b) => b.compareTo(a)); // Сортируем от новых к старым
+
+    int streak = 0;
+    DateTime currentDate = DateTime.now();
+    currentDate = DateTime(currentDate.year, currentDate.month, currentDate.day);
+
+    for (final date in dates) {
+      final dateOnly = DateTime(date.year, date.month, date.day);
+      final daysDifference =
+          currentDate.difference(dateOnly).inDays;
+
+      if (daysDifference == streak) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+
+    return streak;
   }
 }

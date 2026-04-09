@@ -19,6 +19,13 @@ class AchievementService extends ChangeNotifier {
   int get currentXp => _userLevel?.totalXp ?? 0;
   int get currentLevel => _userLevel?.currentLevel ?? 1;
 
+  String? get currentUserId {
+    final user = _supabase.auth.currentUser;
+    return user?.id;
+  }
+
+  bool get isUserAuthenticated => currentUserId != null;
+
   Future<void> loadAchievements(String userId) async {
     if (_loaded && _loadedUserId == userId) {
       return;
@@ -182,6 +189,25 @@ class AchievementService extends ChangeNotifier {
     }
 
     return unlockedList;
+  }
+
+  /// Проверить и разблокировать достижения для текущего пользователя
+  Future<List<Achievement>> checkAndUnlockAchievementsForCurrentUser(
+    int totalWorkouts,
+    int totalCalories,
+    int currentStreak,
+  ) async {
+    final uid = currentUserId;
+    if (uid == null || uid.isEmpty) {
+      debugPrint('Warning: Cannot check achievements - user not authenticated');
+      return [];
+    }
+    return checkAndUnlockAchievements(
+      uid,
+      totalWorkouts,
+      totalCalories,
+      currentStreak,
+    );
   }
 
   Future<void> _createUserLevel(String userId, UserLevel userLevel) async {
