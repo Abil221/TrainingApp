@@ -36,8 +36,8 @@ class UserProgress {
 
   Map<String, dynamic> toJson() {
     return {
-      'userName': userName,
-      'fitnessLevel': fitnessLevel,
+      'display_name': userName,
+      'fitness_level': fitnessLevel,
       'height': height,
       'weight': weight,
     };
@@ -45,10 +45,30 @@ class UserProgress {
 
   factory UserProgress.fromJson(Map<String, dynamic> json) {
     return UserProgress(
-      userName: json['userName'] as String? ?? 'Атлет',
-      fitnessLevel: json['fitnessLevel'] as String? ?? 'Средний',
+      userName: json['display_name'] as String? ?? 
+                json['userName'] as String? ?? 'Атлет',
+      fitnessLevel: json['fitness_level'] as String? ?? 
+                    json['fitnessLevel'] as String? ?? 'Средний',
       height: json['height'] as int? ?? 175,
       weight: json['weight'] as int? ?? 75,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is UserProgress &&
+        other.userName == userName &&
+        other.fitnessLevel == fitnessLevel &&
+        other.height == height &&
+        other.weight == weight;
+  }
+
+  @override
+  int get hashCode =>
+      userName.hashCode ^
+      fitnessLevel.hashCode ^
+      height.hashCode ^
+      weight.hashCode;
 }

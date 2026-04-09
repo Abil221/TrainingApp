@@ -111,14 +111,19 @@ class AppSettings {
       return;
     }
 
-    await Supabase.instance.client.from('profiles').upsert({
-      'id': currentUser.id,
-      'email': currentUser.email,
-      'display_name': value.userName,
-      'fitness_level': value.fitnessLevel,
-      'height': value.height,
-      'weight': value.weight,
-    });
+    try {
+      await Supabase.instance.client.from('profiles').upsert({
+        'id': currentUser.id,
+        'email': currentUser.email,
+        'display_name': value.userName,
+        'fitness_level': value.fitnessLevel,
+        'height': value.height,
+        'weight': value.weight,
+      });
+    } catch (e) {
+      // Log error but keep local value
+      debugPrint('Error updating profile: $e');
+    }
   }
 
   Future<void> _syncUserProgressFromSupabase() async {

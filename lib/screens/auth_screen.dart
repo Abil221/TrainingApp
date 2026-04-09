@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../app_settings.dart';
+import '../models/user_progress.dart';
 import '../widgets/app_surfaces.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -14,6 +16,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _nameController = TextEditingController();
 
   bool _isLogin = true;
   bool _isSubmitting = false;
@@ -23,6 +26,7 @@ class _AuthScreenState extends State<AuthScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -57,6 +61,34 @@ class _AuthScreenState extends State<AuthScreen> {
 
         if (!mounted) {
           return;
+        }
+
+        // Сохраняем имя профиля после регистрации
+        final currentUser = auth.currentUser;
+        if (currentUser != null) {
+          final profileName = _nameController.text.trim().isEmpty 
+            ? 'Атлет' 
+            : _nameController.text.trim();
+          
+          await Supabase.instance.client.from('profiles').upsert({
+            'id': currentUser.id,
+            'email': currentUser.email,
+            'display_name': profileName,
+            'fitness_level': 'Средний',
+            'height': 175,
+            'weight': 75,
+          });
+
+          // Обновляем локальное хранилище
+          final appSettings = AppSettings();
+          await appSettings.updateUserProgress(
+            UserProgress(
+              userName: profileName,
+              fitnessLevel: 'Средний',
+              height: 175,
+              weight: 75,
+            ),
+          );
         }
 
         if (response.session == null) {
@@ -205,6 +237,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                     onTap: () {
                                       setState(() {
                                         _isLogin = true;
+                                        _nameController.clear();
                                       });
                                     },
                                   ),
@@ -240,6 +273,30 @@ class _AuthScreenState extends State<AuthScreen> {
                                 return null;
                               },
                             ),
+                            if (!_isLogin)
+                              ...[
+                                const SizedBox(height: 14),
+                                TextFormField(
+                                  controller: _nameController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Имя профиля',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  validator: (value) {
+                                    final name = value?.trim() ?? '';
+                                    if (name.isEmpty) {
+                                      return 'Введи имя для профиля';
+                                    }
+                                    if (name.length < 2) {
+                                      return 'Имя должно быть не короче 2 символов';
+                                    }
+                                    if (name.length > 50) {
+                                      return 'Имя должно быть не длиннее 50 символов';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ],
                             const SizedBox(height: 14),
                             TextFormField(
                               controller: _passwordController,
