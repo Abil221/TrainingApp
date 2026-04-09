@@ -160,8 +160,8 @@ class AuthGate extends StatelessWidget {
 
     return StreamBuilder<AuthState>(
       stream: auth.onAuthStateChange,
-      initialData: AuthState(AuthChangeEvent.initialSession,
-          auth.currentSession),
+      initialData:
+          AuthState(AuthChangeEvent.initialSession, auth.currentSession),
       builder: (context, snapshot) {
         final session = snapshot.data?.session;
 
@@ -171,11 +171,17 @@ class AuthGate extends StatelessWidget {
 
         final userId = session.user.id;
 
-        return _ProvidersWrapper(
-          userId: userId,
-          child: appSettings.onboardingCompleted.value
-              ? const MainTabs()
-              : const OnboardingScreen(),
+        return ValueListenableBuilder<bool>(
+          valueListenable: appSettings.onboardingCompleted,
+          builder: (context, onboardingCompleted, child) {
+            return _ProvidersWrapper(
+              key: ValueKey(userId),
+              userId: userId,
+              child: onboardingCompleted
+                  ? const MainTabs()
+                  : const OnboardingScreen(),
+            );
+          },
         );
       },
     );
@@ -187,6 +193,7 @@ class _ProvidersWrapper extends StatelessWidget {
   final Widget child;
 
   const _ProvidersWrapper({
+    super.key,
     required this.userId,
     required this.child,
   });

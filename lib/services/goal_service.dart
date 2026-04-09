@@ -11,6 +11,7 @@ class GoalService extends ChangeNotifier {
   List<UserGoal> _completedGoals = [];
   List<WeightEntry> _weightHistory = [];
   bool _loaded = false;
+  String? _loadedUserId;
 
   List<UserGoal> get activeGoals => _activeGoals;
   List<UserGoal> get completedGoals => _completedGoals;
@@ -18,7 +19,13 @@ class GoalService extends ChangeNotifier {
   List<WeightEntry> get weightHistory => _weightHistory;
 
   Future<void> loadGoals(String userId) async {
-    if (_loaded) return;
+    if (_loaded && _loadedUserId == userId) {
+      return;
+    }
+
+    if (_loadedUserId != userId) {
+      reset();
+    }
 
     try {
       final goalsData = await _supabase
@@ -37,6 +44,7 @@ class GoalService extends ChangeNotifier {
       // Загружаем историю веса
       await _loadWeightHistory(userId);
 
+      _loadedUserId = userId;
       _loaded = true;
       notifyListeners();
     } catch (e) {
@@ -115,10 +123,7 @@ class GoalService extends ChangeNotifier {
         updateData['description'] = description;
       }
 
-      await _supabase
-          .from('user_goals')
-          .update(updateData)
-          .eq('id', goalId);
+      await _supabase.from('user_goals').update(updateData).eq('id', goalId);
 
       // Обновляем локально
       final goalIndex = _activeGoals.indexWhere((g) => g.id == goalId);
@@ -138,13 +143,10 @@ class GoalService extends ChangeNotifier {
 
   Future<void> completeGoal(String goalId) async {
     try {
-      await _supabase
-          .from('user_goals')
-          .update({
-            'is_completed': true,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', goalId);
+      await _supabase.from('user_goals').update({
+        'is_completed': true,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', goalId);
 
       final goal = _activeGoals.firstWhere((g) => g.id == goalId);
       _activeGoals.removeWhere((g) => g.id == goalId);
@@ -162,10 +164,7 @@ class GoalService extends ChangeNotifier {
 
   Future<void> deleteGoal(String goalId) async {
     try {
-      await _supabase
-          .from('user_goals')
-          .delete()
-          .eq('id', goalId);
+      await _supabase.from('user_goals').delete().eq('id', goalId);
 
       _activeGoals.removeWhere((g) => g.id == goalId);
       _completedGoals.removeWhere((g) => g.id == goalId);
@@ -249,5 +248,6 @@ class GoalService extends ChangeNotifier {
     _completedGoals = [];
     _weightHistory = [];
     _loaded = false;
+    _loadedUserId = null;
   }
 }

@@ -37,7 +37,7 @@ class WorkoutPlanCard extends StatelessWidget {
           boxShadow: [
             BoxShadow(
               color: (isActive ? Colors.green : Colors.grey)
-                  .withOpacity(0.3),
+                  .withValues(alpha: 0.3),
               blurRadius: 8,
               offset: const Offset(0, 4),
             ),
@@ -70,7 +70,7 @@ class WorkoutPlanCard extends StatelessWidget {
                       Text(
                         plan.description,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.8),
+                          color: Colors.white.withValues(alpha: 0.8),
                           fontSize: 12,
                         ),
                         maxLines: 1,
@@ -86,7 +86,7 @@ class WorkoutPlanCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.3),
+                      color: Colors.white.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text(
@@ -110,7 +110,7 @@ class WorkoutPlanCard extends StatelessWidget {
                     Text(
                       'Упражнений',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                         fontSize: 11,
                       ),
                     ),
@@ -131,7 +131,7 @@ class WorkoutPlanCard extends StatelessWidget {
                     Text(
                       'Длительность',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                         fontSize: 11,
                       ),
                     ),
@@ -158,7 +158,7 @@ class WorkoutPlanCard extends StatelessWidget {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: const Text(

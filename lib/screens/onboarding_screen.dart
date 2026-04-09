@@ -12,6 +12,7 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
+  bool _isFinishing = false;
 
   final List<_OnboardingPageData> _pages = const [
     _OnboardingPageData(
@@ -47,12 +48,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _finishOnboarding() async {
+    if (_isFinishing) {
+      return;
+    }
+
+    setState(() {
+      _isFinishing = true;
+    });
+
     await AppSettings().completeOnboarding();
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isFinishing = false;
+    });
   }
 
-  void _nextPage() {
+  Future<void> _nextPage() async {
     if (_currentPage == _pages.length - 1) {
-      _finishOnboarding();
+      await _finishOnboarding();
       return;
     }
 
@@ -93,7 +110,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                   const Spacer(),
                   TextButton(
-                    onPressed: _finishOnboarding,
+                    onPressed: _isFinishing ? null : _finishOnboarding,
                     child: const Text('Пропустить'),
                   ),
                 ],
@@ -218,14 +235,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   SizedBox(
                     width: 176,
                     child: ElevatedButton.icon(
-                      onPressed: _nextPage,
+                      onPressed: _isFinishing ? null : _nextPage,
                       icon: Icon(
-                        _currentPage == _pages.length - 1
-                            ? Icons.check_rounded
-                            : Icons.arrow_forward_rounded,
+                        _isFinishing
+                            ? Icons.hourglass_top_rounded
+                            : _currentPage == _pages.length - 1
+                                ? Icons.check_rounded
+                                : Icons.arrow_forward_rounded,
                       ),
                       label: Text(
-                        _currentPage == _pages.length - 1 ? 'Начать' : 'Дальше',
+                        _isFinishing
+                            ? 'Открываем...'
+                            : _currentPage == _pages.length - 1
+                                ? 'Начать'
+                                : 'Дальше',
                       ),
                     ),
                   ),

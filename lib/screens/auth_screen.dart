@@ -42,6 +42,7 @@ class _AuthScreenState extends State<AuthScreen> {
       final auth = Supabase.instance.client.auth;
       final email = _emailController.text.trim();
       final password = _passwordController.text.trim();
+      var successMessage = _isLogin ? 'Вход выполнен' : 'Аккаунт создан';
 
       if (_isLogin) {
         await auth.signInWithPassword(
@@ -64,6 +65,7 @@ class _AuthScreenState extends State<AuthScreen> {
             _authInfoMessage =
                 'Аккаунт создан, но вход пока не выполнен: в Supabase включено подтверждение email. Подтверди почту и затем войди.';
           });
+          successMessage = 'Аккаунт создан. Подтверди email, чтобы войти.';
         }
       }
 
@@ -71,12 +73,8 @@ class _AuthScreenState extends State<AuthScreen> {
         return;
       }
 
-      final message = _isLogin
-          ? 'Вход выполнен'
-          : 'Аккаунт создан';
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
+        SnackBar(content: Text(successMessage)),
       );
     } on AuthException catch (error) {
       if (!mounted) {
@@ -161,7 +159,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                           const SizedBox(height: 22),
                           Text(
-                            _isLogin ? 'Вход в TrainingApp' : 'Создание аккаунта',
+                            _isLogin
+                                ? 'Вход в TrainingApp'
+                                : 'Создание аккаунта',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 32,
@@ -265,7 +265,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                 child: Text(
                                   _isSubmitting
                                       ? 'Подождите...'
-                                      : (_isLogin ? 'Войти' : 'Создать аккаунт'),
+                                      : (_isLogin
+                                          ? 'Войти'
+                                          : 'Создать аккаунт'),
                                 ),
                               ),
                             ),

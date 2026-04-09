@@ -11,6 +11,7 @@ class AchievementService extends ChangeNotifier {
   List<UserAchievement> _userAchievements = [];
   UserLevel? _userLevel;
   bool _loaded = false;
+  String? _loadedUserId;
 
   List<Achievement> get allAchievements => _allAchievements;
   List<UserAchievement> get userAchievements => _userAchievements;
@@ -19,14 +20,18 @@ class AchievementService extends ChangeNotifier {
   int get currentLevel => _userLevel?.currentLevel ?? 1;
 
   Future<void> loadAchievements(String userId) async {
-    if (_loaded) return;
+    if (_loaded && _loadedUserId == userId) {
+      return;
+    }
+
+    if (_loadedUserId != userId) {
+      reset();
+    }
 
     try {
       // Загружаем все достижения
-      final achievementsData = await _supabase
-          .from('achievements')
-          .select()
-          .order('created_at');
+      final achievementsData =
+          await _supabase.from('achievements').select().order('created_at');
 
       _allAchievements = (achievementsData as List)
           .map((e) => Achievement.fromJson(e))
@@ -63,6 +68,7 @@ class AchievementService extends ChangeNotifier {
         await _createUserLevel(userId, _userLevel!);
       }
 
+      _loadedUserId = userId;
       _loaded = true;
       notifyListeners();
     } catch (e) {
@@ -85,15 +91,12 @@ class AchievementService extends ChangeNotifier {
         updatedAt: DateTime.now(),
       );
 
-      await _supabase
-          .from('user_levels')
-          .update({
-            'total_xp': newTotalXp,
-            'current_level': newLevel,
-            'xp_for_next_level': nextLevelXp,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('user_id', userId);
+      await _supabase.from('user_levels').update({
+        'total_xp': newTotalXp,
+        'current_level': newLevel,
+        'xp_for_next_level': nextLevelXp,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('user_id', userId);
 
       notifyListeners();
     } catch (e) {
@@ -113,9 +116,8 @@ class AchievementService extends ChangeNotifier {
 
       if (existing != null) return;
 
-      final achievement = _allAchievements
-          .where((a) => a.id == achievementId)
-          .firstOrNull;
+      final achievement =
+          _allAchievements.where((a) => a.id == achievementId).firstOrNull;
 
       if (achievement == null) return;
 
@@ -153,8 +155,7 @@ class AchievementService extends ChangeNotifier {
     try {
       for (final achievement in _allAchievements) {
         // Пропускаем уже разблокированные
-        if (_userAchievements
-            .any((ua) => ua.achievementId == achievement.id)) {
+        if (_userAchievements.any((ua) => ua.achievementId == achievement.id)) {
           continue;
         }
 
@@ -215,5 +216,6 @@ class AchievementService extends ChangeNotifier {
     _userAchievements = [];
     _userLevel = null;
     _loaded = false;
+    _loadedUserId = null;
   }
 }

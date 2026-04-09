@@ -27,7 +27,7 @@ class LevelProgressCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.blue.withOpacity(0.3),
+            color: Colors.blue.withValues(alpha: 0.3),
             blurRadius: 12,
             offset: const Offset(0, 8),
           ),
@@ -66,9 +66,9 @@ class LevelProgressCard extends StatelessWidget {
                 height: 100,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withValues(alpha: 0.5),
                     width: 2,
                   ),
                 ),
@@ -104,7 +104,7 @@ class LevelProgressCard extends StatelessWidget {
               child: LinearProgressIndicator(
                 value: userLevel.progressToNextLevel,
                 minHeight: 8,
-                backgroundColor: Colors.white.withOpacity(0.2),
+                backgroundColor: Colors.white.withValues(alpha: 0.2),
                 valueColor: AlwaysStoppedAnimation(Colors.greenAccent.shade400),
               ),
             ),
@@ -136,7 +136,7 @@ class LevelProgressCard extends StatelessWidget {
                 Container(
                   width: 1,
                   height: 40,
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                 ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,

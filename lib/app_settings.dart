@@ -22,6 +22,7 @@ class AppSettings {
 
   SharedPreferences? _preferences;
   bool _loaded = false;
+  String? _activeUserId;
 
   final ValueNotifier<ThemeMode> themeMode = ValueNotifier(ThemeMode.light);
   final ValueNotifier<String> language = ValueNotifier('Русский');
@@ -64,24 +65,16 @@ class AppSettings {
       language.value = savedLanguage;
     }
 
-    notificationsEnabled.value = _preferences!.getBool(_notificationsKey) ?? true;
+    notificationsEnabled.value =
+        _preferences!.getBool(_notificationsKey) ?? true;
     soundEnabled.value = _preferences!.getBool(_soundKey) ?? true;
-    onboardingCompleted.value =
-        _preferences!.getBool(_onboardingCompletedKey) ?? false;
-
-    final savedUserProgress = _preferences!.getString(_userProgressKey);
-    if (savedUserProgress != null && savedUserProgress.isNotEmpty) {
-      userProgress.value = UserProgress.fromJson(
-        jsonDecode(savedUserProgress) as Map<String, dynamic>,
-      );
-    }
-
-    Supabase.instance.client.auth.onAuthStateChange.listen((_) {
-      _syncUserProgressFromSupabase();
-    });
 
     _loaded = true;
-    await _syncUserProgressFromSupabase();
+    await _loadStateForCurrentUser();
+
+    Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+      _handleAuthStateChanged();
+    });
   }
 
   Future<void> setDarkMode(bool enabled) async {
@@ -106,7 +99,7 @@ class AppSettings {
 
   Future<void> completeOnboarding() async {
     onboardingCompleted.value = true;
-    await _preferences?.setBool(_onboardingCompletedKey, true);
+    await _preferences?.setBool(_userScopedKey(_onboardingCompletedKey), true);
   }
 
   Future<void> updateUserProgress(UserProgress value) async {
@@ -133,7 +126,6 @@ class AppSettings {
 
     if (currentUser == null) {
       userProgress.value = const UserProgress();
-      await _preferences?.remove(_userProgressKey);
       return;
     }
 
@@ -163,7 +155,44 @@ class AppSettings {
   }
 
   Future<void> _cacheUserProgress(UserProgress value) async {
-    await _preferences?.setString(_userProgressKey, jsonEncode(value.toJson()));
+    await _preferences?.setString(
+      _userScopedKey(_userProgressKey),
+      jsonEncode(value.toJson()),
+    );
+  }
+
+  Future<void> _handleAuthStateChanged() async {
+    await _loadStateForCurrentUser();
+  }
+
+  Future<void> _loadStateForCurrentUser() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final currentUserId = currentUser?.id;
+
+    _activeUserId = currentUserId;
+    onboardingCompleted.value = _preferences
+            ?.getBool(_userScopedKey(_onboardingCompletedKey, currentUserId)) ??
+        false;
+
+    final savedUserProgress = _preferences
+        ?.getString(_userScopedKey(_userProgressKey, currentUserId));
+    if (savedUserProgress != null && savedUserProgress.isNotEmpty) {
+      userProgress.value = UserProgress.fromJson(
+        jsonDecode(savedUserProgress) as Map<String, dynamic>,
+      );
+    } else {
+      userProgress.value = const UserProgress();
+    }
+
+    await _syncUserProgressFromSupabase();
+  }
+
+  String _userScopedKey(String baseKey, [String? userId]) {
+    final resolvedUserId = userId ?? _activeUserId;
+    if (resolvedUserId == null || resolvedUserId.isEmpty) {
+      return baseKey;
+    }
+    return '$baseKey:$resolvedUserId';
   }
 
   Locale _languageToLocale(String value) {

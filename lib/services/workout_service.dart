@@ -35,9 +35,8 @@ class WorkoutService extends ChangeNotifier {
   }
 
   WorkoutService._internal() {
-    _fallbackWorkouts = _workouts
-        .map((workout) => workout.copyWith())
-        .toList(growable: false);
+    _fallbackWorkouts =
+        _workouts.map((workout) => workout.copyWith()).toList(growable: false);
     _resetWorkoutState();
   }
 
@@ -175,10 +174,14 @@ class WorkoutService extends ChangeNotifier {
     _friendWorkoutLogs.clear();
     _selectedFriendId = null;
 
-    final favorites = _preferences!.getStringList(_storageKey(_favoriteWorkoutIdsKey));
-    final completedCounts = _preferences!.getString(_storageKey(_completedWorkoutCountsKey));
-    final dailyHistory = _preferences!.getString(_storageKey(_dailyWorkoutHistoryKey));
-    final encodedWorkoutLogs = _preferences!.getString(_storageKey(_workoutLogsKey));
+    final favorites =
+        _preferences!.getStringList(_storageKey(_favoriteWorkoutIdsKey));
+    final completedCounts =
+        _preferences!.getString(_storageKey(_completedWorkoutCountsKey));
+    final dailyHistory =
+        _preferences!.getString(_storageKey(_dailyWorkoutHistoryKey));
+    final encodedWorkoutLogs =
+        _preferences!.getString(_storageKey(_workoutLogsKey));
 
     final hasSavedState = favorites != null ||
         completedCounts != null ||
@@ -225,7 +228,6 @@ class WorkoutService extends ChangeNotifier {
         _friendWorkoutLogs[friendId] = entries;
       }
     }
-
   }
 
   void _resetWorkoutState() {
@@ -562,7 +564,8 @@ class WorkoutService extends ChangeNotifier {
   List<DateTime> getFriendTrainingDates(String friendId) {
     final logs = getFriendWorkoutLogs(friendId);
     final dates = logs
-        .map((entry) => DateTime(entry.completedAt.year, entry.completedAt.month, entry.completedAt.day))
+        .map((entry) => DateTime(entry.completedAt.year,
+            entry.completedAt.month, entry.completedAt.day))
         .toSet()
         .toList(growable: false);
     dates.sort((a, b) => b.compareTo(a));
@@ -573,7 +576,8 @@ class WorkoutService extends ChangeNotifier {
     final logs = getFriendWorkoutLogs(friendId);
     final totalWorkouts = logs.length;
     final totalCalories = logs.fold<int>(0, (sum, e) => sum + e.caloriesBurned);
-    final totalDuration = logs.fold<int>(0, (sum, e) => sum + e.durationSeconds);
+    final totalDuration =
+        logs.fold<int>(0, (sum, e) => sum + e.durationSeconds);
     return {
       'totalWorkouts': totalWorkouts,
       'totalCalories': totalCalories,
@@ -1019,7 +1023,8 @@ class WorkoutService extends ChangeNotifier {
 
     await _preferences!.setString(
       _storageKey(_friendProfilesKey),
-      jsonEncode(_friendProfiles.map((e) => e.toJson()).toList(growable: false)),
+      jsonEncode(
+          _friendProfiles.map((e) => e.toJson()).toList(growable: false)),
     );
 
     final friendLogBundle = _friendWorkoutLogs.entries
@@ -1065,7 +1070,8 @@ class WorkoutService extends ChangeNotifier {
       final remoteFavoriteIds = await _fetchRemoteFavoriteIds();
       final remoteLogs = await _fetchRemoteWorkoutLogs();
 
-      await _pushMissingFavoritesToSupabase(localFavoriteIds, remoteFavoriteIds);
+      await _pushMissingFavoritesToSupabase(
+          localFavoriteIds, remoteFavoriteIds);
       await _pushMissingLogsToSupabase(localLogs, remoteLogs);
 
       final syncedFavoriteIds = await _fetchRemoteFavoriteIds();
@@ -1110,9 +1116,8 @@ class WorkoutService extends ChangeNotifier {
     final friendshipIdByFriendId = {
       for (final row in friendshipRows)
         ((row['requester_id'] as String) == currentUser.id
-                ? row['addressee_id']
-                : row['requester_id'])
-            as String: row['id'] as String,
+            ? row['addressee_id']
+            : row['requester_id']) as String: row['id'] as String,
     };
 
     _friendProfiles.clear();
@@ -1189,9 +1194,13 @@ class WorkoutService extends ChangeNotifier {
     _selectedFriendId = _friendProfiles.first.id;
   }
 
-  Future<void> refreshSocialData() async {
+  Future<void> refreshSocialData({
+    bool notifyOnIncomingIncrease = false,
+  }) async {
     await _syncFriendStateFromSupabase();
-    await _refreshIncomingRequestsCount(notifyOnIncrease: false);
+    await _refreshIncomingRequestsCount(
+      notifyOnIncrease: notifyOnIncomingIncrease,
+    );
     notifyListeners();
   }
 
@@ -1330,10 +1339,8 @@ class WorkoutService extends ChangeNotifier {
     String friendshipId, {
     required bool accept,
   }) async {
-    await Supabase.instance.client
-        .from('friendships')
-        .update({'status': accept ? 'accepted' : 'declined'})
-        .eq('id', friendshipId);
+    await Supabase.instance.client.from('friendships').update(
+        {'status': accept ? 'accepted' : 'declined'}).eq('id', friendshipId);
 
     await refreshSocialData();
   }
@@ -1369,7 +1376,8 @@ class WorkoutService extends ChangeNotifier {
       return;
     }
 
-    final channel = Supabase.instance.client.channel('friendships:$currentUserId');
+    final channel =
+        Supabase.instance.client.channel('friendships:$currentUserId');
     channel.onPostgresChanges(
       event: PostgresChangeEvent.all,
       schema: 'public',
@@ -1397,8 +1405,7 @@ class WorkoutService extends ChangeNotifier {
   }
 
   Future<void> _handleFriendshipRealtimeEvent() async {
-    await refreshSocialData();
-    await _refreshIncomingRequestsCount(notifyOnIncrease: true);
+    await refreshSocialData(notifyOnIncomingIncrease: true);
   }
 
   Future<void> _refreshIncomingRequestsCount({
@@ -1415,9 +1422,9 @@ class WorkoutService extends ChangeNotifier {
     final nextCount = incoming.length;
 
     if (notifyOnIncrease && nextCount > _lastKnownIncomingRequests) {
-      final latestName = incoming.isNotEmpty ? incoming.first.name : 'пользователь';
-      socialNotificationMessage.value =
-          'Новая заявка в друзья от $latestName';
+      final latestName =
+          incoming.isNotEmpty ? incoming.first.name : 'пользователь';
+      socialNotificationMessage.value = 'Новая заявка в друзья от $latestName';
     }
 
     _lastKnownIncomingRequests = nextCount;
@@ -1605,8 +1612,9 @@ class WorkoutService extends ChangeNotifier {
   }
 
   String _logSyncKey(WorkoutLogEntry entry) {
-    final progressValue =
-        entry.progressValue == null ? '' : entry.progressValue!.toStringAsFixed(2);
+    final progressValue = entry.progressValue == null
+        ? ''
+        : entry.progressValue!.toStringAsFixed(2);
     return [
       entry.workoutId,
       entry.completedAt.toIso8601String(),
@@ -1618,7 +1626,8 @@ class WorkoutService extends ChangeNotifier {
     ].join('|');
   }
 
-  Future<void> _syncFavoriteToSupabase(String workoutId, bool isFavorite) async {
+  Future<void> _syncFavoriteToSupabase(
+      String workoutId, bool isFavorite) async {
     final currentUser = Supabase.instance.client.auth.currentUser;
     if (currentUser == null) {
       return;

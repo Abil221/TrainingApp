@@ -9,12 +9,19 @@ class WorkoutPlanService extends ChangeNotifier {
   List<WorkoutPlan> _userPlans = [];
   WorkoutPlan? _activePlan;
   bool _loaded = false;
+  String? _loadedUserId;
 
   List<WorkoutPlan> get userPlans => _userPlans;
   WorkoutPlan? get activePlan => _activePlan;
 
   Future<void> loadPlans(String userId) async {
-    if (_loaded) return;
+    if (_loaded && _loadedUserId == userId) {
+      return;
+    }
+
+    if (_loadedUserId != userId) {
+      reset();
+    }
 
     try {
       final plansData = await _supabase
@@ -35,6 +42,7 @@ class WorkoutPlanService extends ChangeNotifier {
             )
           : null;
 
+      _loadedUserId = userId;
       _loaded = true;
       notifyListeners();
     } catch (e) {
@@ -56,7 +64,8 @@ class WorkoutPlanService extends ChangeNotifier {
             'name': name,
             'description': description,
             'duration_weeks': durationWeeks,
-            'is_active': _userPlans.isEmpty, // Первый план автоматически активный
+            'is_active':
+                _userPlans.isEmpty, // Первый план автоматически активный
           })
           .select()
           .single();
@@ -83,15 +92,12 @@ class WorkoutPlanService extends ChangeNotifier {
     required int durationWeeks,
   }) async {
     try {
-      await _supabase
-          .from('workout_plans')
-          .update({
-            'name': name,
-            'description': description,
-            'duration_weeks': durationWeeks,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', planId);
+      await _supabase.from('workout_plans').update({
+        'name': name,
+        'description': description,
+        'duration_weeks': durationWeeks,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', planId);
 
       final index = _userPlans.indexWhere((p) => p.id == planId);
       if (index != -1) {
@@ -115,15 +121,13 @@ class WorkoutPlanService extends ChangeNotifier {
       if (_activePlan != null) {
         await _supabase
             .from('workout_plans')
-            .update({'is_active': false})
-            .eq('id', _activePlan!.id);
+            .update({'is_active': false}).eq('id', _activePlan!.id);
       }
 
       // Активируем новый план
       await _supabase
           .from('workout_plans')
-          .update({'is_active': true})
-          .eq('id', planId);
+          .update({'is_active': true}).eq('id', planId);
 
       final index = _userPlans.indexWhere((p) => p.id == planId);
       if (index != -1) {
@@ -143,10 +147,7 @@ class WorkoutPlanService extends ChangeNotifier {
 
   Future<void> deletePlan(String planId) async {
     try {
-      await _supabase
-          .from('workout_plans')
-          .delete()
-          .eq('id', planId);
+      await _supabase.from('workout_plans').delete().eq('id', planId);
 
       _userPlans.removeWhere((p) => p.id == planId);
 
@@ -168,13 +169,15 @@ class WorkoutPlanService extends ChangeNotifier {
   }) async {
     try {
       // Находим максимальный порядок для этого дня
-      final existingDays = _activePlan?.days
-              ?.where((d) => d.dayOfWeek == dayOfWeek)
-              .toList() ??
-          [];
+      final existingDays =
+          _activePlan?.days?.where((d) => d.dayOfWeek == dayOfWeek).toList() ??
+              [];
 
-      final maxOrder =
-          existingDays.isEmpty ? 0 : existingDays.map((d) => d.orderInDay).reduce((a, b) => a > b ? a : b);
+      final maxOrder = existingDays.isEmpty
+          ? 0
+          : existingDays
+              .map((d) => d.orderInDay)
+              .reduce((a, b) => a > b ? a : b);
 
       final result = await _supabase
           .from('workout_plan_days')
@@ -206,10 +209,7 @@ class WorkoutPlanService extends ChangeNotifier {
 
   Future<void> removeWorkoutFromDay(String dayId) async {
     try {
-      await _supabase
-          .from('workout_plan_days')
-          .delete()
-          .eq('id', dayId);
+      await _supabase.from('workout_plan_days').delete().eq('id', dayId);
 
       if (_activePlan != null) {
         _activePlan = _activePlan!.copyWith(
@@ -224,7 +224,8 @@ class WorkoutPlanService extends ChangeNotifier {
   }
 
   List<WorkoutPlanDay> getWorkoutsForDay(int dayOfWeek) {
-    return _activePlan?.days?.where((d) => d.dayOfWeek == dayOfWeek).toList() ?? [];
+    return _activePlan?.days?.where((d) => d.dayOfWeek == dayOfWeek).toList() ??
+        [];
   }
 
   Future<void> reload(String userId) async {
@@ -236,5 +237,6 @@ class WorkoutPlanService extends ChangeNotifier {
     _userPlans = [];
     _activePlan = null;
     _loaded = false;
+    _loadedUserId = null;
   }
 }

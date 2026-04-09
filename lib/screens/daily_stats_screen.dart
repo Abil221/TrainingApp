@@ -157,8 +157,8 @@ class _DailyStatsScreenState extends State<DailyStatsScreen> {
           friendWorkouts: friendStats['totalWorkouts'] ?? 0,
           totalCalories: overallStats['totalCalories'] ?? 0,
           friendCalories: friendStats['totalCalories'] ?? 0,
-          totalDuration: overallStats['totalDuration'] ?? 0,
-          friendDuration: friendStats['totalDuration'] ?? 0,
+          totalDuration: (overallStats['totalDuration'] ?? 0) ~/ 60,
+          friendDuration: (friendStats['totalDuration'] ?? 0) ~/ 60,
           streak: streak,
           friendStreak: friendStreak,
           sharedDays: sharedTrainingDays,
@@ -634,6 +634,7 @@ class _CompetitionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasFriends = friends.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -649,64 +650,162 @@ class _CompetitionCard extends StatelessWidget {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: selectedFriendId ?? activeFriend.id,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  ),
-                  items: friends
-                      .map(
-                        (friend) => DropdownMenuItem<String>(
-                          value: friend.id,
-                          child: Text(friend.name),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: (value) {
-                    if (value != null) {
-                      onFriendChanged(value);
-                    }
-                  },
+          if (!hasFriends)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.04)
+                    : Colors.white.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: isDark
+                      ? const Color(0xFF243041)
+                      : const Color(0xFFE5E7EB),
                 ),
               ),
-            ],
+              child: const Text(
+                'Добавь хотя бы одного друга, чтобы сравнивать тренировки, калории и стрик в реальном времени.',
+                style: TextStyle(
+                  color: Color(0xFF6B7280),
+                  height: 1.45,
+                ),
+              ),
+            )
+          else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: selectedFriendId ?? activeFriend.id,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    items: friends
+                        .map(
+                          (friend) => DropdownMenuItem<String>(
+                            value: friend.id,
+                            child: Text(friend.name),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: (value) {
+                      if (value != null) {
+                        onFriendChanged(value);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _ComparisonChartRow(
+              label: 'Тренировки',
+              yourValue: totalWorkouts,
+              friendValue: friendWorkouts,
+              yourLabel: 'Мои',
+              friendLabel: activeFriend.name,
+            ),
+            const SizedBox(height: 12),
+            _ComparisonChartRow(
+              label: 'Калории',
+              yourValue: totalCalories,
+              friendValue: friendCalories,
+              yourLabel: 'Мои',
+              friendLabel: activeFriend.name,
+            ),
+            const SizedBox(height: 12),
+            _ComparisonChartRow(
+              label: 'Время (мин)',
+              yourValue: totalDuration,
+              friendValue: friendDuration,
+              yourLabel: 'Мои',
+              friendLabel: activeFriend.name,
+            ),
+            const SizedBox(height: 12),
+            _ComparisonChartRow(
+              label: 'Стрик',
+              yourValue: streak,
+              friendValue: friendStreak,
+              yourLabel: 'Свой',
+              friendLabel: activeFriend.name,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _SharedMetricTile(
+                    title: 'Общие дни',
+                    value: '$sharedDays',
+                    subtitle: 'когда вы тренировались оба',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _SharedMetricTile(
+                    title: 'Общий стрик',
+                    value: '$sharedStreak',
+                    subtitle: 'подряд вместе',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SharedMetricTile extends StatelessWidget {
+  final String title;
+  final String value;
+  final String subtitle;
+
+  const _SharedMetricTile({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          const SizedBox(height: 16),
-          _ComparisonChartRow(
-            label: 'Тренировки',
-            yourValue: totalWorkouts,
-            friendValue: friendWorkouts,
-            yourLabel: 'Мои',
-            friendLabel: activeFriend.name,
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
           ),
-          const SizedBox(height: 12),
-          _ComparisonChartRow(
-            label: 'Калории',
-            yourValue: totalCalories,
-            friendValue: friendCalories,
-            yourLabel: 'Мои',
-            friendLabel: activeFriend.name,
-          ),
-          const SizedBox(height: 12),
-          _ComparisonChartRow(
-            label: 'Время (мин)',
-            yourValue: totalDuration,
-            friendValue: friendDuration,
-            yourLabel: 'Мои',
-            friendLabel: activeFriend.name,
-          ),
-          const SizedBox(height: 12),
-          _ComparisonChartRow(
-            label: 'Стрик',
-            yourValue: streak,
-            friendValue: friendStreak,
-            yourLabel: 'Свой',
-            friendLabel: activeFriend.name,
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 12,
+              height: 1.35,
+            ),
           ),
         ],
       ),
@@ -733,7 +832,7 @@ class _ComparisonChartRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final maxValue = math.max(yourValue, friendValue).toDouble();
     final maxValueDisplay = maxValue == 0 ? 1 : maxValue;
-    
+
     final yourPercent = yourValue / maxValueDisplay;
     final friendPercent = friendValue / maxValueDisplay;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -781,9 +880,12 @@ class _ComparisonChartRow extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: yourPercent,
                       minHeight: 8,
-                      backgroundColor: const Color(0xFF111827).withValues(alpha: 0.1),
+                      backgroundColor:
+                          const Color(0xFF111827).withValues(alpha: 0.1),
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        isDark ? const Color(0xFF60A5FA) : const Color(0xFF3B82F6),
+                        isDark
+                            ? const Color(0xFF60A5FA)
+                            : const Color(0xFF3B82F6),
                       ),
                     ),
                   ),
@@ -820,9 +922,12 @@ class _ComparisonChartRow extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: friendPercent,
                       minHeight: 8,
-                      backgroundColor: const Color(0xFF111827).withValues(alpha: 0.1),
+                      backgroundColor:
+                          const Color(0xFF111827).withValues(alpha: 0.1),
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        isDark ? const Color(0xFFFCA5A5) : const Color(0xFFF87171),
+                        isDark
+                            ? const Color(0xFFFCA5A5)
+                            : const Color(0xFFF87171),
                       ),
                     ),
                   ),
@@ -832,42 +937,6 @@ class _ComparisonChartRow extends StatelessWidget {
           ],
         ),
       ],
-    );
-  }
-}
-
-class _SmallMetricTile extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _SmallMetricTile({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF111827).withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      constraints: const BoxConstraints(minWidth: 110),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1215,7 +1284,8 @@ class _ProgressWorkoutSelector extends StatelessWidget {
                                           color: Color(0xFFFF6B35),
                                         )
                                       : null,
-                                  onTap: () => Navigator.pop(context, workout.id),
+                                  onTap: () =>
+                                      Navigator.pop(context, workout.id),
                                 ),
                               );
                             },

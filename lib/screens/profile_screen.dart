@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../app_settings.dart';
 import '../models/user_progress.dart';
+import '../services/achievement_service.dart';
+import '../services/goal_service.dart';
 import '../services/workout_service.dart';
+import '../services/workout_plan_service.dart';
 import '../widgets/app_surfaces.dart';
 import 'favorites_screen.dart';
 import 'friends_screen.dart';
@@ -66,271 +70,291 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: ValueListenableBuilder<UserProgress>(
               valueListenable: appSettings.userProgress,
               builder: (context, progress, child) {
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
-                    gradient: LinearGradient(
-                      colors: [heroGradientStart, heroGradientEnd],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 34,
-                            backgroundColor: isDark
-                                ? const Color(0xFFFF6B35)
-                                : const Color(0xFF111827),
-                            child: Icon(
-                              Icons.person_rounded,
-                              size: 34,
-                              color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFFFAF6F1),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  progress.userName,
-                                  style: TextStyle(
-                                    color: isDark
-                                        ? Colors.white
-                                        : const Color(0xFF111827),
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Уровень подготовки: ${progress.fitnessLevel}',
-                                  style: TextStyle(
-                                    color: isDark
-                                        ? const Color(0xFFD1D5DB)
-                                        : const Color(0xFF525B6A),
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 22),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _ProfileHeroStat(
-                              value: '$totalWorkouts',
-                              label: 'тренировок',
-                              isDark: isDark,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _ProfileHeroStat(
-                              value: _formatCompact(totalCalories),
-                              label: 'калорий',
-                              isDark: isDark,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _ProfileHeroStat(
-                              value: '${totalDuration ~/ 3600}ч',
-                              label: 'времени',
-                              isDark: isDark,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                   children: [
-                    Expanded(
-                      child: _MetricCard(
-                        title: 'Рост',
-                        value: '${progress.height} см',
-                        color: isDark
-                            ? const Color(0xFF60A5FA)
-                            : const Color(0xFF111827),
-                        isDark: isDark,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _MetricCard(
-                        title: 'Вес',
-                        value: '${progress.weight} кг',
-                        color: const Color(0xFFFF6B35),
-                        isDark: isDark,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _MetricCard(
-                        title: 'BMI',
-                        value: progress.bmi.toStringAsFixed(1),
-                        color: const Color(0xFF2A9D8F),
-                        isDark: isDark,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    color: cardColor,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Быстрые действия',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          color:
-                              isDark ? Colors.white : const Color(0xFF111827),
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(30),
+                        gradient: LinearGradient(
+                          colors: [heroGradientStart, heroGradientEnd],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      _ActionTile(
-                        icon: Icons.favorite_rounded,
-                        title: 'Избранные тренировки',
-                        subtitle: 'Быстрый доступ к сохранённым упражнениям',
-                        color: const Color(0xFFE63946),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const FavoritesScreen(),
-                            ),
-                          );
-                        },
-                        isDark: isDark,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 34,
+                                backgroundColor: isDark
+                                    ? const Color(0xFFFF6B35)
+                                    : const Color(0xFF111827),
+                                child: Icon(
+                                  Icons.person_rounded,
+                                  size: 34,
+                                  color: isDark
+                                      ? Colors.white
+                                      : const Color(0xFFFAF6F1),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      progress.userName,
+                                      style: TextStyle(
+                                        color: isDark
+                                            ? Colors.white
+                                            : const Color(0xFF111827),
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Уровень подготовки: ${progress.fitnessLevel}',
+                                      style: TextStyle(
+                                        color: isDark
+                                            ? const Color(0xFFD1D5DB)
+                                            : const Color(0xFF525B6A),
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 22),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _ProfileHeroStat(
+                                  value: '$totalWorkouts',
+                                  label: 'тренировок',
+                                  isDark: isDark,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _ProfileHeroStat(
+                                  value: _formatCompact(totalCalories),
+                                  label: 'калорий',
+                                  isDark: isDark,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _ProfileHeroStat(
+                                  value: '${totalDuration ~/ 3600}ч',
+                                  label: 'времени',
+                                  isDark: isDark,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 12),
-                      _ActionTile(
-                        icon: Icons.edit_rounded,
-                        title: 'Редактировать профиль',
-                        subtitle: 'Имя, рост, вес и уровень подготовки',
-                        color: isDark
-                            ? const Color(0xFF60A5FA)
-                            : const Color(0xFF111827),
-                        onTap: () => _showEditProfileDialog(progress),
-                        isDark: isDark,
-                      ),
-                      const SizedBox(height: 12),
-                      ValueListenableBuilder<int>(
-                        valueListenable:
-                            workoutService.incomingFriendRequestsCount,
-                        builder: (context, pendingCount, child) {
-                          return _ActionTile(
-                            icon: Icons.people_alt_rounded,
-                            title: 'Друзья и заявки',
-                            subtitle:
-                                'Поиск пользователей, входящие заявки и список друзей',
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _MetricCard(
+                            title: 'Рост',
+                            value: '${progress.height} см',
+                            color: isDark
+                                ? const Color(0xFF60A5FA)
+                                : const Color(0xFF111827),
+                            isDark: isDark,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _MetricCard(
+                            title: 'Вес',
+                            value: '${progress.weight} кг',
+                            color: const Color(0xFFFF6B35),
+                            isDark: isDark,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _MetricCard(
+                            title: 'BMI',
+                            value: progress.bmi.toStringAsFixed(1),
                             color: const Color(0xFF2A9D8F),
-                            badgeText:
-                                pendingCount > 0 ? '$pendingCount новых' : null,
+                            isDark: isDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        color: cardColor,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Быстрые действия',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF111827),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _ActionTile(
+                            icon: Icons.favorite_rounded,
+                            title: 'Избранные тренировки',
+                            subtitle:
+                                'Быстрый доступ к сохранённым упражнениям',
+                            color: const Color(0xFFE63946),
                             onTap: () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => const FriendsScreen(),
+                                  builder: (_) => const FavoritesScreen(),
                                 ),
                               );
                             },
                             isDark: isDark,
-                          );
-                        },
+                          ),
+                          const SizedBox(height: 12),
+                          _ActionTile(
+                            icon: Icons.edit_rounded,
+                            title: 'Редактировать профиль',
+                            subtitle: 'Имя, рост, вес и уровень подготовки',
+                            color: isDark
+                                ? const Color(0xFF60A5FA)
+                                : const Color(0xFF111827),
+                            onTap: () => _showEditProfileDialog(progress),
+                            isDark: isDark,
+                          ),
+                          const SizedBox(height: 12),
+                          ValueListenableBuilder<int>(
+                            valueListenable:
+                                workoutService.incomingFriendRequestsCount,
+                            builder: (context, pendingCount, child) {
+                              return _ActionTile(
+                                icon: Icons.people_alt_rounded,
+                                title: 'Друзья и заявки',
+                                subtitle:
+                                    'Поиск пользователей, входящие заявки и список друзей',
+                                color: const Color(0xFF2A9D8F),
+                                badgeText: pendingCount > 0
+                                    ? '$pendingCount новых'
+                                    : null,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const FriendsScreen(),
+                                    ),
+                                  );
+                                },
+                                isDark: isDark,
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          _ActionTile(
+                            icon: Icons.emoji_events_rounded,
+                            title: 'Достижения',
+                            subtitle:
+                                'Разблокируйте достижения и повышайте уровень',
+                            color: const Color(0xFFFFA500),
+                            onTap: () {
+                              final achievementService =
+                                  context.read<AchievementService>();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChangeNotifierProvider.value(
+                                    value: achievementService,
+                                    child: const AchievementsScreen(),
+                                  ),
+                                ),
+                              );
+                            },
+                            isDark: isDark,
+                          ),
+                          const SizedBox(height: 12),
+                          _ActionTile(
+                            icon: Icons.fitness_center_rounded,
+                            title: 'Планы тренировок',
+                            subtitle:
+                                'Создавайте и управляйте своими программами',
+                            color: const Color(0xFF4CAF50),
+                            onTap: () {
+                              final workoutPlanService =
+                                  context.read<WorkoutPlanService>();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChangeNotifierProvider.value(
+                                    value: workoutPlanService,
+                                    child: const WorkoutPlansScreen(),
+                                  ),
+                                ),
+                              );
+                            },
+                            isDark: isDark,
+                          ),
+                          const SizedBox(height: 12),
+                          _ActionTile(
+                            icon: Icons.flag_rounded,
+                            title: 'Цели и прогресс',
+                            subtitle: 'Отслеживайте вес и достигайте целей',
+                            color: const Color(0xFF2196F3),
+                            onTap: () {
+                              final goalService = context.read<GoalService>();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChangeNotifierProvider.value(
+                                    value: goalService,
+                                    child: const GoalsScreen(),
+                                  ),
+                                ),
+                              );
+                            },
+                            isDark: isDark,
+                          ),
+                          const SizedBox(height: 12),
+                          _ActionTile(
+                            icon: Icons.settings_rounded,
+                            title: 'Настройки приложения',
+                            subtitle:
+                                'Уведомления, язык и параметры интерфейса',
+                            color: const Color(0xFFFF6B35),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const SettingsScreen(),
+                                ),
+                              );
+                            },
+                            isDark: isDark,
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 12),
-                      _ActionTile(
-                        icon: Icons.emoji_events_rounded,
-                        title: 'Достижения',
-                        subtitle: 'Разблокируйте достижения и повышайте уровень',
-                        color: const Color(0xFFFFA500),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const AchievementsScreen(),
-                            ),
-                          );
-                        },
-                        isDark: isDark,
-                      ),
-                      const SizedBox(height: 12),
-                      _ActionTile(
-                        icon: Icons.fitness_center_rounded,
-                        title: 'Планы тренировок',
-                        subtitle: 'Создавайте и управляйте своими программами',
-                        color: const Color(0xFF4CAF50),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const WorkoutPlansScreen(),
-                            ),
-                          );
-                        },
-                        isDark: isDark,
-                      ),
-                      const SizedBox(height: 12),
-                      _ActionTile(
-                        icon: Icons.flag_rounded,
-                        title: 'Цели и прогресс',
-                        subtitle: 'Отслеживайте вес и достигайте целей',
-                        color: const Color(0xFF2196F3),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const GoalsScreen(),
-                            ),
-                          );
-                        },
-                        isDark: isDark,
-                      ),
-                      const SizedBox(height: 12),
-                      _ActionTile(
-                        icon: Icons.settings_rounded,
-                        title: 'Настройки приложения',
-                        subtitle: 'Уведомления, язык и параметры интерфейса',
-                        color: const Color(0xFFFF6B35),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const SettingsScreen(),
-                            ),
-                          );
-                        },
-                        isDark: isDark,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
+                    ),
+                  ],
+                );
               },
             ),
           ),
@@ -621,8 +645,9 @@ class _ActionTile extends StatelessWidget {
                           child: Text(
                             title,
                             style: TextStyle(
-                              color:
-                                  isDark ? Colors.white : const Color(0xFF111827),
+                              color: isDark
+                                  ? Colors.white
+                                  : const Color(0xFF111827),
                               fontWeight: FontWeight.w800,
                             ),
                           ),

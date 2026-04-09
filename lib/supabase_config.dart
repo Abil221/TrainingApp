@@ -1,8 +1,24 @@
 class SupabaseConfig {
-  static const String url = 'https://xqnprnifbmobnpypryir.supabase.co';
+  static const String _url = String.fromEnvironment('SUPABASE_URL');
+  static const String _anonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
-  static const String anonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhxbnBybmlmYm1vYm5weXByeWlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMTkyOTAsImV4cCI6MjA5MDY5NTI5MH0.1cI1g59i9kQH7GzlkQnli0y6UQu5eAz_wjg4E10BOgw';
+  static String get url {
+    if (_url.isEmpty) {
+      throw StateError(
+        'Missing SUPABASE_URL. Run the app with --dart-define=SUPABASE_URL=... or --dart-define-from-file=supabase.env.json.',
+      );
+    }
+    return _url;
+  }
+
+  static String get anonKey {
+    if (_anonKey.isEmpty) {
+      throw StateError(
+        'Missing SUPABASE_ANON_KEY. Run the app with --dart-define=SUPABASE_ANON_KEY=... or --dart-define-from-file=supabase.env.json.',
+      );
+    }
+    return _anonKey;
+  }
 
   const SupabaseConfig._();
 }
