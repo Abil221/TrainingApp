@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../models/chat_message.dart';
 import '../models/friend_profile.dart';
 import '../models/friend_request.dart';
 import '../models/profile_search_result.dart';
+import '../screens/chat_screen.dart';
 import '../services/workout_service.dart';
 import '../widgets/app_surfaces.dart';
 
@@ -20,19 +22,34 @@ class _FriendsScreenState extends State<FriendsScreen> {
   List<FriendRequest> _incomingRequests = const [];
   List<FriendRequest> _outgoingRequests = const [];
   List<ProfileSearchResult> _searchResults = const [];
+  Map<String, ChatMessage?> _lastChatMessages = {};
+  Map<String, int> _unreadChatCounts = {};
   bool _isLoading = true;
   bool _isSearching = false;
 
   @override
   void initState() {
     super.initState();
+    _workoutService.addListener(_handleServiceChanged);
     _refresh();
   }
 
   @override
   void dispose() {
+    _workoutService.removeListener(_handleServiceChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _handleServiceChanged() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _lastChatMessages = _workoutService.getLastChatMessages();
+      _unreadChatCounts = _workoutService.getUnreadChatCounts();
+    });
   }
 
   Future<void> _refresh() async {
@@ -53,6 +70,8 @@ class _FriendsScreenState extends State<FriendsScreen> {
     setState(() {
       _incomingRequests = incoming;
       _outgoingRequests = outgoing;
+      _lastChatMessages = _workoutService.getLastChatMessages();
+      _unreadChatCounts = _workoutService.getUnreadChatCounts();
       _isLoading = false;
     });
 
@@ -97,6 +116,29 @@ class _FriendsScreenState extends State<FriendsScreen> {
     await _refresh();
   }
 
+  Future<void> _handleOpenChat(FriendProfile friend) async {
+    if (friend.friendshipId == null || friend.friendshipId!.isEmpty) {
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(friend: friend),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    await _refresh();
+  }
+
   Future<void> _handleRespond(FriendRequest request, bool accept) async {
     final messenger = ScaffoldMessenger.of(context);
     await _workoutService.respondToFriendRequest(
@@ -136,6 +178,26 @@ class _FriendsScreenState extends State<FriendsScreen> {
   @override
   Widget build(BuildContext context) {
     final friends = _workoutService.getFriendProfiles();
+    final chatFriends = friends.toList(growable: false)
+      ..sort((a, b) {
+        final aMessage =
+            a.friendshipId == null ? null : _lastChatMessages[a.friendshipId!];
+        final bMessage =
+            b.friendshipId == null ? null : _lastChatMessages[b.friendshipId!];
+
+        final aTime = aMessage?.createdAt;
+        final bTime = bMessage?.createdAt;
+        if (aTime != null && bTime != null) {
+          return bTime.compareTo(aTime);
+        }
+        if (aTime != null) {
+          return -1;
+        }
+        if (bTime != null) {
+          return 1;
+        }
+        return a.name.compareTo(b.name);
+      });
 
     return Scaffold(
       appBar: AppBar(title: const Text('Друзья')),
@@ -338,6 +400,35 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
               const SizedBox(height: 16),
               _SectionCard(
+                title: 'Чаты',
+                child: chatFriends.isEmpty
+                    ? const _EmptySection(
+                        text: 'Сначала добавь друзей, чтобы начать переписку.',
+                      )
+                    : Column(
+                        children: chatFriends
+                            .map(
+                              (friend) => Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: _ChatThreadTile(
+                                  friend: friend,
+                                  lastMessage: friend.friendshipId != null
+                                      ? _lastChatMessages[friend.friendshipId!]
+                                      : null,
+                                  unreadCount: friend.friendshipId != null
+                                      ? (_unreadChatCounts[
+                                              friend.friendshipId!] ??
+                                          0)
+                                      : 0,
+                                  onOpen: () => _handleOpenChat(friend),
+                                ),
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+              ),
+              const SizedBox(height: 16),
+              _SectionCard(
                 title: 'Текущие друзья',
                 child: friends.isEmpty
                     ? const _EmptySection(
@@ -350,12 +441,21 @@ class _FriendsScreenState extends State<FriendsScreen> {
                                 padding: const EdgeInsets.only(bottom: 10),
                                 child: _FriendTile(
                                   friend: friend,
+                                  lastMessage: friend.friendshipId != null
+                                      ? _lastChatMessages[friend.friendshipId!]
+                                      : null,
+                                  unreadCount: friend.friendshipId != null
+                                      ? (_unreadChatCounts[
+                                              friend.friendshipId!] ??
+                                          0)
+                                      : 0,
+                                  onChat: () => _handleOpenChat(friend),
                                   onRemove: () => _handleRemoveFriendship(
                                     friend.friendshipId ?? '',
                                     'Друг удалён',
                                   ),
-                                  workoutCount: _workoutService
-                                      .getFriendStats(friend.id)['totalWorkouts']!,
+                                  workoutCount: _workoutService.getFriendStats(
+                                      friend.id)['totalWorkouts']!,
                                 ),
                               ),
                             )
@@ -519,7 +619,8 @@ class _RequestTile extends StatelessWidget {
             children: [
               const CircleAvatar(
                 backgroundColor: Color(0xFF111827),
-                child: Icon(Icons.person_add_alt_1_rounded, color: Colors.white),
+                child:
+                    Icon(Icons.person_add_alt_1_rounded, color: Colors.white),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -636,12 +737,18 @@ class _OutgoingRequestTile extends StatelessWidget {
 class _FriendTile extends StatelessWidget {
   final FriendProfile friend;
   final int workoutCount;
+  final ChatMessage? lastMessage;
+  final int unreadCount;
+  final VoidCallback onChat;
   final VoidCallback onRemove;
 
   const _FriendTile({
     required this.friend,
     required this.workoutCount,
+    required this.onChat,
     required this.onRemove,
+    this.lastMessage,
+    required this.unreadCount,
   });
 
   @override
@@ -672,30 +779,234 @@ class _FriendTile extends StatelessWidget {
                         color: Color(0xFF111827),
                       ),
                     ),
+                    const SizedBox(height: 4),
                     Text(
-                      '$workoutCount тренировок в общей статистике',
+                      _buildPresenceLabel(friend),
+                      style: TextStyle(
+                        color: friend.isOnline
+                            ? const Color(0xFF2A9D8F)
+                            : const Color(0xFF9CA3AF),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      lastMessage?.content ??
+                          'Напиши первое сообщение вашему другу',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: unreadCount > 0
+                            ? const Color(0xFF111827)
+                            : lastMessage != null
+                                ? const Color(0xFF6B7280)
+                                : const Color(0xFF9CA3AF),
+                        fontSize: 13,
+                        fontWeight:
+                            unreadCount > 0 ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const _StatusPill(label: 'Друг', color: Color(0xFF2A9D8F)),
+                  if (unreadCount > 0) ...[
+                    const SizedBox(height: 8),
+                    _StatusPill(
+                      label: unreadCount > 99 ? '99+' : '$unreadCount',
+                      color: const Color(0xFFE63946),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onChat,
+                  child: const Text('Чат'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onRemove,
+                  child: const Text('Удалить из друзей'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _buildPresenceLabel(FriendProfile friend) {
+    if (friend.isOnline) {
+      return 'Сейчас в сети';
+    }
+
+    final lastSeen = friend.lastSeen;
+    if (lastSeen == null) {
+      return 'Недавно был(а) в сети';
+    }
+
+    final now = DateTime.now();
+    final difference = now.difference(lastSeen);
+    if (difference.inMinutes < 1) {
+      return 'Только что был(а) онлайн';
+    }
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} мин назад';
+    }
+    if (difference.inHours < 24) {
+      return '${difference.inHours} ч назад';
+    }
+    return '${lastSeen.day.toString().padLeft(2, '0')}.${lastSeen.month.toString().padLeft(2, '0')}';
+  }
+}
+
+class _ChatThreadTile extends StatelessWidget {
+  final FriendProfile friend;
+  final ChatMessage? lastMessage;
+  final int unreadCount;
+  final VoidCallback onOpen;
+
+  const _ChatThreadTile({
+    required this.friend,
+    required this.lastMessage,
+    required this.unreadCount,
+    required this.onOpen,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = lastMessage?.content ?? 'Сообщений пока нет';
+    final timeLabel = lastMessage == null
+        ? null
+        : _formatThreadTimestamp(lastMessage!.createdAt);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onOpen,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: Colors.white.withValues(alpha: 0.72),
+          ),
+          child: Row(
+            children: [
+              const CircleAvatar(
+                backgroundColor: Color(0xFF111827),
+                child: Icon(Icons.chat_bubble_rounded, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      friend.name,
                       style: const TextStyle(
-                        color: Color(0xFF6B7280),
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      friend.isOnline ? 'В сети' : 'Не в сети',
+                      style: TextStyle(
+                        color: friend.isOnline
+                            ? const Color(0xFF2A9D8F)
+                            : const Color(0xFF9CA3AF),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: unreadCount > 0
+                            ? const Color(0xFF111827)
+                            : const Color(0xFF6B7280),
+                        fontWeight:
+                            unreadCount > 0 ? FontWeight.w700 : FontWeight.w500,
                         fontSize: 13,
                       ),
                     ),
                   ],
                 ),
               ),
-              const _StatusPill(label: 'Друг', color: Color(0xFF2A9D8F)),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (timeLabel != null)
+                    Text(
+                      timeLabel,
+                      style: const TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  if (unreadCount > 0) ...[
+                    if (timeLabel != null) const SizedBox(height: 8),
+                    _StatusPill(
+                      label: unreadCount > 99 ? '99+' : '$unreadCount',
+                      color: const Color(0xFFE63946),
+                    ),
+                  ],
+                ],
+              ),
             ],
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: onRemove,
-              child: const Text('Удалить из друзей'),
-            ),
-          ),
-        ],
+        ),
       ),
     );
+  }
+
+  String _formatThreadTimestamp(DateTime value) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final target = DateTime(value.year, value.month, value.day);
+    final difference = today.difference(target).inDays;
+
+    if (difference == 0) {
+      return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+    }
+    if (difference == 1) {
+      return 'Вчера';
+    }
+
+    const months = [
+      'янв',
+      'фев',
+      'мар',
+      'апр',
+      'мая',
+      'июн',
+      'июл',
+      'авг',
+      'сен',
+      'окт',
+      'ноя',
+      'дек',
+    ];
+    return '${value.day} ${months[value.month - 1]}';
   }
 }
 

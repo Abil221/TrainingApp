@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -224,7 +226,7 @@ class MainTabs extends StatefulWidget {
   State<MainTabs> createState() => _MainTabsState();
 }
 
-class _MainTabsState extends State<MainTabs> {
+class _MainTabsState extends State<MainTabs> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   final WorkoutService _workoutService = WorkoutService();
 
@@ -238,17 +240,36 @@ class _MainTabsState extends State<MainTabs> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _workoutService.socialNotificationMessage.addListener(
       _handleSocialNotification,
     );
+    unawaited(_workoutService.updatePresence(isOnline: true));
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _workoutService.socialNotificationMessage.removeListener(
       _handleSocialNotification,
     );
+    unawaited(_workoutService.updatePresence(isOnline: false));
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        unawaited(_workoutService.updatePresence(isOnline: true));
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        unawaited(_workoutService.updatePresence(isOnline: false));
+        break;
+    }
   }
 
   void _handleSocialNotification() {

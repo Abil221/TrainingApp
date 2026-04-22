@@ -7,6 +7,8 @@ create table if not exists public.profiles (
   fitness_level text not null default 'Средний',
   height integer not null default 175 check (height between 50 and 260),
   weight integer not null default 75 check (weight between 20 and 400),
+  is_online boolean not null default false,
+  last_seen timestamptz,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
@@ -76,6 +78,48 @@ create unique index if not exists idx_friendships_unique_users
     least(requester_id, addressee_id),
     greatest(requester_id, addressee_id)
   );
+
+create table if not exists public.friend_messages (
+  id uuid primary key default gen_random_uuid(),
+  friendship_id uuid not null references public.friendships (id) on delete cascade,
+  sender_id uuid not null references public.profiles (id) on delete cascade,
+  recipient_id uuid not null references public.profiles (id) on delete cascade,
+  content text not null,
+  created_at timestamptz not null default timezone('utc', now()),
+  read_at timestamptz
+);
+
+create table if not exists public.friend_typing_states (
+  friendship_id uuid not null references public.friendships (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  is_typing boolean not null default false,
+  updated_at timestamptz not null default timezone('utc', now()),
+  primary key (friendship_id, user_id)
+);
+
+create index if not exists idx_friend_messages_friendship_created_at
+  on public.friend_messages (friendship_id, created_at asc);
+
+create index if not exists idx_friend_typing_states_friendship
+  on public.friend_typing_states (friendship_id, updated_at desc);
+
+create or replace function public.is_friendship_participant(
+  friendship_id uuid,
+  user_id uuid
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.friendships
+    where id = friendship_id
+      and status = 'accepted'
+      and (requester_id = user_id or addressee_id = user_id)
+  );
+$$;
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -188,6 +232,8 @@ alter table public.workouts enable row level security;
 alter table public.workout_logs enable row level security;
 alter table public.favorites enable row level security;
 alter table public.friendships enable row level security;
+alter table public.friend_messages enable row level security;
+alter table public.friend_typing_states enable row level security;
 
 drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own"
@@ -271,6 +317,70 @@ drop policy if exists "friendships_delete_participant" on public.friendships;
 create policy "friendships_delete_participant"
   on public.friendships for delete
   using (auth.uid() = requester_id or auth.uid() = addressee_id);
+
+drop policy if exists "friend_messages_select_participant" on public.friend_messages;
+create policy "friend_messages_select_participant"
+  on public.friend_messages for select
+  using (public.is_friendship_participant(friendship_id, auth.uid()));
+
+drop policy if exists "friend_messages_insert_participant" on public.friend_messages;
+create policy "friend_messages_insert_participant"
+  on public.friend_messages for insert
+  with check (
+    public.is_friendship_participant(friendship_id, auth.uid())
+    and auth.uid() = sender_id
+  );
+
+drop policy if exists "friend_messages_update_none" on public.friend_messages;
+create policy "friend_messages_update_recipient_read_at"
+  on public.friend_messages for update
+  using (
+    auth.uid() = recipient_id
+    and read_at is null
+  )
+  with check (
+    auth.uid() = recipient_id
+    and sender_id = sender_id
+    and recipient_id = recipient_id
+    and friendship_id = friendship_id
+    and content = content
+    and read_at is not null
+  );
+
+drop policy if exists "friend_messages_delete_none" on public.friend_messages;
+create policy "friend_messages_delete_none"
+  on public.friend_messages for delete
+  using (false);
+
+drop policy if exists "friend_typing_states_select_participant" on public.friend_typing_states;
+create policy "friend_typing_states_select_participant"
+  on public.friend_typing_states for select
+  using (public.is_friendship_participant(friendship_id, auth.uid()));
+
+drop policy if exists "friend_typing_states_insert_participant" on public.friend_typing_states;
+create policy "friend_typing_states_insert_participant"
+  on public.friend_typing_states for insert
+  with check (
+    public.is_friendship_participant(friendship_id, auth.uid())
+    and auth.uid() = user_id
+  );
+
+drop policy if exists "friend_typing_states_update_participant" on public.friend_typing_states;
+create policy "friend_typing_states_update_participant"
+  on public.friend_typing_states for update
+  using (
+    public.is_friendship_participant(friendship_id, auth.uid())
+    and auth.uid() = user_id
+  )
+  with check (
+    public.is_friendship_participant(friendship_id, auth.uid())
+    and auth.uid() = user_id
+  );
+
+drop policy if exists "friend_typing_states_delete_participant" on public.friend_typing_states;
+create policy "friend_typing_states_delete_participant"
+  on public.friend_typing_states for delete
+  using (auth.uid() = user_id);
 
 -- ============ ACHIEVEMENTS ============
 create table if not exists public.achievements (

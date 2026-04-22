@@ -162,8 +162,14 @@ class GoalService extends ChangeNotifier {
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', goalId);
 
-      final goal = _activeGoals.firstWhere((g) => g.id == goalId);
-      _activeGoals.removeWhere((g) => g.id == goalId);
+      final goalIndex = _activeGoals.indexWhere((g) => g.id == goalId);
+      if (goalIndex == -1) {
+        debugPrint('Warning: completeGoal called for unknown goalId: $goalId');
+        return;
+      }
+
+      final goal = _activeGoals[goalIndex];
+      _activeGoals.removeAt(goalIndex);
       _completedGoals.add(goal.copyWith(
         isCompleted: true,
         updatedAt: DateTime.now(),
@@ -198,7 +204,8 @@ class GoalService extends ChangeNotifier {
     try {
       final uid = userId ?? currentUserId;
       if (uid == null || uid.isEmpty) {
-        debugPrint('Error: User not authenticated. Cannot record weight without user ID');
+        debugPrint(
+            'Error: User not authenticated. Cannot record weight without user ID');
         throw StateError('User not authenticated');
       }
       final result = await _supabase

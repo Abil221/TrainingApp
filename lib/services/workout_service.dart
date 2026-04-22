@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/chat_message.dart';
 import '../models/daily_workout.dart';
 import '../models/friend_profile.dart';
 import '../models/friend_request.dart';
@@ -19,6 +20,7 @@ const _dailyWorkoutHistoryKey = 'daily_workout_history';
 const _workoutLogsKey = 'workout_logs';
 const _friendProfilesKey = 'friend_profiles';
 const _friendWorkoutLogsKey = 'friend_workout_logs';
+const Duration _friendTypingTtl = Duration(seconds: 5);
 
 const List<String> _gymSplitGroups = [
   'Грудь',
@@ -46,6 +48,15 @@ class WorkoutService extends ChangeNotifier {
 
   final List<FriendProfile> _friendProfiles = [];
   final Map<String, List<WorkoutLogEntry>> _friendWorkoutLogs = {};
+  final Map<String, ChatMessage?> _lastChatMessageByFriendshipId = {};
+  final Map<String, int> _unreadChatCountByFriendshipId = {};
+  final Map<String, List<ChatMessage>> _chatMessagesByFriendshipId = {};
+  final Map<String, ValueNotifier<List<ChatMessage>>> _chatMessagesNotifiers =
+      {};
+  final Map<String, ValueNotifier<bool>> _friendTypingNotifiers = {};
+  final Map<String, Timer> _friendTypingExpiryTimers = {};
+  RealtimeChannel? _chatMessagesChannel;
+  String? _activeChatFriendshipId;
   String? _selectedFriendId;
 
   SharedPreferences? _preferences;
@@ -54,7 +65,11 @@ class WorkoutService extends ChangeNotifier {
   final Map<String, String> _remoteWorkoutIdsByLegacyId = {};
   late final List<Workout> _fallbackWorkouts;
   RealtimeChannel? _friendshipsChannel;
+  RealtimeChannel? _friendMessagesSummaryChannel;
+  RealtimeChannel? _friendPresenceChannel;
   String? _activeRealtimeUserId;
+  String? _activeMessagesRealtimeUserId;
+  String? _activePresenceRealtimeUserId;
   int _lastKnownIncomingRequests = 0;
 
   final ValueNotifier<int> incomingFriendRequestsCount = ValueNotifier(0);
@@ -76,6 +91,8 @@ class WorkoutService extends ChangeNotifier {
 
   Future<void> _handleAuthStateChanged() async {
     await _configureFriendshipsRealtime();
+    await _configureFriendMessagesRealtime();
+    await _configureFriendPresenceRealtime();
     await _reloadStateForCurrentUser();
     await _refreshIncomingRequestsCount(notifyOnIncrease: false);
   }
@@ -542,13 +559,16 @@ class WorkoutService extends ChangeNotifier {
 
   FriendProfile? getActiveFriend() {
     final profiles = getFriendProfiles();
+    if (profiles.isEmpty) {
+      return null;
+    }
     if (_selectedFriendId != null) {
       return profiles.firstWhere(
         (element) => element.id == _selectedFriendId,
         orElse: () => profiles.first,
       );
     }
-    return profiles.isNotEmpty ? profiles.first : null;
+    return profiles.first;
   }
 
   void setActiveFriend(String id) {
@@ -738,7 +758,7 @@ class WorkoutService extends ChangeNotifier {
       _appendLogEntry(entry);
       _persistState();
       unawaited(_syncLogEntryToSupabase(entry));
-      
+
       // Проверить достижения после завершения тренировки
       unawaited(_checkAchievementsAfterWorkout());
     }
@@ -1134,7 +1154,7 @@ class WorkoutService extends ChangeNotifier {
 
     final profilesResponse = await Supabase.instance.client
         .from('profiles')
-        .select('id, display_name')
+        .select('id, display_name, is_online, last_seen')
         .inFilter('id', friendIds);
 
     final profiles = (profilesResponse as List<dynamic>)
@@ -1144,6 +1164,10 @@ class WorkoutService extends ChangeNotifier {
             id: row['id'] as String,
             name: row['display_name'] as String? ?? 'Друг',
             friendshipId: friendshipIdByFriendId[row['id'] as String],
+            isOnline: row['is_online'] as bool? ?? false,
+            lastSeen: row['last_seen'] == null
+                ? null
+                : DateTime.parse(row['last_seen'] as String),
           ),
         )
         .toList(growable: false)
@@ -1195,13 +1219,16 @@ class WorkoutService extends ChangeNotifier {
       return;
     }
 
-    _selectedFriendId = _friendProfiles.first.id;
+    _selectedFriendId =
+        _friendProfiles.isNotEmpty ? _friendProfiles.first.id : null;
   }
 
   Future<void> refreshSocialData({
     bool notifyOnIncomingIncrease = false,
   }) async {
     await _syncFriendStateFromSupabase();
+    await refreshChatSummaries();
+    await refreshUnreadChatCounts();
     await _refreshIncomingRequestsCount(
       notifyOnIncrease: notifyOnIncomingIncrease,
     );
@@ -1210,6 +1237,92 @@ class WorkoutService extends ChangeNotifier {
 
   void clearSocialNotification() {
     socialNotificationMessage.value = null;
+  }
+
+  ChatMessage? getLastChatMessage(String friendshipId) {
+    return _lastChatMessageByFriendshipId[friendshipId];
+  }
+
+  int getUnreadChatCount(String friendshipId) {
+    return _unreadChatCountByFriendshipId[friendshipId] ?? 0;
+  }
+
+  Future<void> refreshChatSummaries() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      return;
+    }
+
+    _lastChatMessageByFriendshipId.clear();
+    for (final friend in _friendProfiles) {
+      final friendshipId = friend.friendshipId;
+      if (friendshipId == null || friendshipId.isEmpty) {
+        continue;
+      }
+
+      try {
+        final response = await Supabase.instance.client
+            .from('friend_messages')
+            .select(
+              'id, friendship_id, sender_id, recipient_id, content, created_at, read_at',
+            )
+            .eq('friendship_id', friendshipId)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+
+        if (response != null) {
+          _lastChatMessageByFriendshipId[friendshipId] =
+              ChatMessage.fromJson(response);
+        }
+      } catch (_) {
+        // Ignore missing chat preview if the query fails.
+      }
+    }
+  }
+
+  Future<void> refreshUnreadChatCounts() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      return;
+    }
+
+    _unreadChatCountByFriendshipId.clear();
+    for (final friend in _friendProfiles) {
+      final friendshipId = friend.friendshipId;
+      if (friendshipId == null || friendshipId.isEmpty) {
+        continue;
+      }
+
+      try {
+        final response = await Supabase.instance.client
+            .from('friend_messages')
+            .select('id')
+            .eq('friendship_id', friendshipId)
+            .eq('recipient_id', currentUser.id)
+            .isFilter('read_at', null);
+
+        _unreadChatCountByFriendshipId[friendshipId] =
+            (response as List<dynamic>).length;
+      } catch (_) {
+        _unreadChatCountByFriendshipId[friendshipId] = 0;
+      }
+    }
+  }
+
+  Map<String, ChatMessage?> getLastChatMessages() {
+    return Map.unmodifiable(_lastChatMessageByFriendshipId);
+  }
+
+  Map<String, int> getUnreadChatCounts() {
+    return Map.unmodifiable(_unreadChatCountByFriendshipId);
+  }
+
+  ValueNotifier<bool> getFriendTypingNotifier(String friendshipId) {
+    return _friendTypingNotifiers.putIfAbsent(
+      friendshipId,
+      () => ValueNotifier(false),
+    );
   }
 
   Future<List<FriendRequest>> getPendingFriendRequests({
@@ -1408,8 +1521,150 @@ class WorkoutService extends ChangeNotifier {
     _friendshipsChannel = channel;
   }
 
+  Future<void> _configureFriendMessagesRealtime() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final currentUserId = currentUser?.id;
+
+    if (_activeMessagesRealtimeUserId == currentUserId) {
+      return;
+    }
+
+    if (_friendMessagesSummaryChannel != null) {
+      await Supabase.instance.client
+          .removeChannel(_friendMessagesSummaryChannel!);
+      _friendMessagesSummaryChannel = null;
+    }
+
+    _activeMessagesRealtimeUserId = currentUserId;
+    if (currentUserId == null) {
+      return;
+    }
+
+    final channel = Supabase.instance.client
+        .channel('friend_messages_summary:$currentUserId');
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'friend_messages',
+      callback: (payload) {
+        final newRecord = payload.newRecord;
+        final oldRecord = payload.oldRecord;
+        final senderId =
+            (newRecord['sender_id'] ?? oldRecord['sender_id']) as String?;
+        final recipientId =
+            (newRecord['recipient_id'] ?? oldRecord['recipient_id']) as String?;
+
+        final isRelatedToCurrentUser =
+            senderId == currentUserId || recipientId == currentUserId;
+        if (!isRelatedToCurrentUser) {
+          return;
+        }
+
+        unawaited(_handleFriendMessageRealtimeEvent());
+      },
+    );
+
+    channel.subscribe();
+    _friendMessagesSummaryChannel = channel;
+  }
+
+  Future<void> _configureFriendPresenceRealtime() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final currentUserId = currentUser?.id;
+
+    if (_activePresenceRealtimeUserId == currentUserId) {
+      return;
+    }
+
+    if (_friendPresenceChannel != null) {
+      await Supabase.instance.client.removeChannel(_friendPresenceChannel!);
+      _friendPresenceChannel = null;
+    }
+
+    _activePresenceRealtimeUserId = currentUserId;
+    if (currentUserId == null) {
+      return;
+    }
+
+    final channel =
+        Supabase.instance.client.channel('friend_presence:$currentUserId');
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.update,
+      schema: 'public',
+      table: 'profiles',
+      callback: (payload) {
+        final newRecord = payload.newRecord;
+        final profileId = newRecord['id'] as String?;
+        if (profileId == null ||
+            !_friendProfiles.any((friend) => friend.id == profileId)) {
+          return;
+        }
+
+        unawaited(_refreshFriendPresence());
+      },
+    );
+
+    channel.subscribe();
+    _friendPresenceChannel = channel;
+  }
+
+  Future<void> _refreshFriendPresence() async {
+    if (_friendProfiles.isEmpty) {
+      return;
+    }
+
+    final friendIds =
+        _friendProfiles.map((friend) => friend.id).toList(growable: false);
+    final profilesResponse = await Supabase.instance.client
+        .from('profiles')
+        .select('id, display_name, is_online, last_seen')
+        .inFilter('id', friendIds);
+
+    final profilesById = {
+      for (final row in (profilesResponse as List<dynamic>)
+          .whereType<Map<String, dynamic>>())
+        row['id'] as String: row,
+    };
+
+    for (var index = 0; index < _friendProfiles.length; index++) {
+      final friend = _friendProfiles[index];
+      final row = profilesById[friend.id];
+      if (row == null) {
+        continue;
+      }
+
+      _friendProfiles[index] = friend.copyWith(
+        name: row['display_name'] as String? ?? friend.name,
+        isOnline: row['is_online'] as bool? ?? false,
+        lastSeen: row['last_seen'] == null
+            ? null
+            : DateTime.parse(row['last_seen'] as String),
+      );
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> updatePresence({required bool isOnline}) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      return;
+    }
+
+    await Supabase.instance.client.from('profiles').update({
+      'is_online': isOnline,
+      'last_seen': DateTime.now().toIso8601String(),
+    }).eq('id', currentUser.id);
+  }
+
   Future<void> _handleFriendshipRealtimeEvent() async {
     await refreshSocialData(notifyOnIncomingIncrease: true);
+  }
+
+  Future<void> _handleFriendMessageRealtimeEvent() async {
+    await refreshChatSummaries();
+    await refreshUnreadChatCounts();
+    notifyListeners();
   }
 
   Future<void> _refreshIncomingRequestsCount({
@@ -1433,6 +1688,235 @@ class WorkoutService extends ChangeNotifier {
 
     _lastKnownIncomingRequests = nextCount;
     incomingFriendRequestsCount.value = nextCount;
+  }
+
+  ValueNotifier<List<ChatMessage>> getChatMessagesNotifier(
+      String friendshipId) {
+    return _chatMessagesNotifiers.putIfAbsent(
+      friendshipId,
+      () => ValueNotifier(_chatMessagesByFriendshipId[friendshipId] ?? []),
+    );
+  }
+
+  Future<List<ChatMessage>> loadChatMessages(String friendshipId) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null || friendshipId.isEmpty) {
+      return const [];
+    }
+
+    final response = await Supabase.instance.client
+        .from('friend_messages')
+        .select(
+          'id, friendship_id, sender_id, recipient_id, content, created_at, read_at',
+        )
+        .eq('friendship_id', friendshipId)
+        .order('created_at', ascending: true);
+
+    final messages = (response as List<dynamic>)
+        .whereType<Map<String, dynamic>>()
+        .map(ChatMessage.fromJson)
+        .toList(growable: false);
+
+    _chatMessagesByFriendshipId[friendshipId] = messages;
+    _lastChatMessageByFriendshipId[friendshipId] =
+        messages.isEmpty ? null : messages.last;
+    getChatMessagesNotifier(friendshipId).value = messages;
+    await markChatAsRead(friendshipId);
+    return messages;
+  }
+
+  Future<void> sendChatMessage(
+    String friendshipId,
+    String recipientId,
+    String content,
+  ) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null || friendshipId.isEmpty || content.trim().isEmpty) {
+      return;
+    }
+
+    final result = await Supabase.instance.client
+        .from('friend_messages')
+        .insert({
+          'friendship_id': friendshipId,
+          'sender_id': currentUser.id,
+          'recipient_id': recipientId,
+          'content': content.trim(),
+          'created_at': DateTime.now().toIso8601String(),
+        })
+        .select()
+        .single();
+
+    final newMessage = ChatMessage.fromJson(result);
+    final existing = _chatMessagesByFriendshipId[friendshipId] ?? [];
+    final updatedMessages = [...existing, newMessage];
+    _chatMessagesByFriendshipId[friendshipId] = updatedMessages;
+    _lastChatMessageByFriendshipId[friendshipId] = newMessage;
+    getChatMessagesNotifier(friendshipId).value = updatedMessages;
+    await setTypingState(friendshipId, false);
+  }
+
+  Future<void> setTypingState(String friendshipId, bool isTyping) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null || friendshipId.isEmpty) {
+      return;
+    }
+
+    await Supabase.instance.client.from('friend_typing_states').upsert(
+      {
+        'friendship_id': friendshipId,
+        'user_id': currentUser.id,
+        'is_typing': isTyping,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      onConflict: 'friendship_id,user_id',
+    );
+  }
+
+  Future<void> _refreshFriendTypingState(String friendshipId) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null || friendshipId.isEmpty) {
+      return;
+    }
+
+    try {
+      final threshold = DateTime.now().subtract(_friendTypingTtl);
+      final response = await Supabase.instance.client
+          .from('friend_typing_states')
+          .select('user_id, is_typing, updated_at')
+          .eq('friendship_id', friendshipId)
+          .neq('user_id', currentUser.id)
+          .eq('is_typing', true)
+          .gte('updated_at', threshold.toIso8601String())
+          .order('updated_at', ascending: false)
+          .limit(1);
+
+      final rows =
+          (response as List<dynamic>).whereType<Map<String, dynamic>>();
+      final activeTypingState = rows.cast<Map<String, dynamic>?>().firstWhere(
+            (row) => row != null,
+            orElse: () => null,
+          );
+      final isFriendTyping = activeTypingState != null;
+      getFriendTypingNotifier(friendshipId).value = isFriendTyping;
+
+      _friendTypingExpiryTimers.remove(friendshipId)?.cancel();
+      if (!isFriendTyping) {
+        return;
+      }
+
+      final updatedAtRaw = activeTypingState['updated_at'] as String?;
+      final updatedAt = updatedAtRaw == null
+          ? DateTime.now()
+          : DateTime.tryParse(updatedAtRaw)?.toLocal() ?? DateTime.now();
+      final expiresAt = updatedAt.add(_friendTypingTtl);
+      final remaining = expiresAt.difference(DateTime.now());
+
+      _friendTypingExpiryTimers[friendshipId] = Timer(
+        remaining.isNegative ? Duration.zero : remaining,
+        () {
+          getFriendTypingNotifier(friendshipId).value = false;
+          _friendTypingExpiryTimers.remove(friendshipId);
+        },
+      );
+    } catch (_) {
+      _friendTypingExpiryTimers.remove(friendshipId)?.cancel();
+      getFriendTypingNotifier(friendshipId).value = false;
+    }
+  }
+
+  Future<void> markChatAsRead(String friendshipId) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null || friendshipId.isEmpty) {
+      return;
+    }
+
+    await Supabase.instance.client
+        .from('friend_messages')
+        .update({'read_at': DateTime.now().toIso8601String()})
+        .eq('friendship_id', friendshipId)
+        .eq('recipient_id', currentUser.id)
+        .isFilter('read_at', null);
+
+    _unreadChatCountByFriendshipId[friendshipId] = 0;
+    notifyListeners();
+  }
+
+  Future<void> subscribeToChat(String friendshipId) async {
+    if (friendshipId.isEmpty) {
+      return;
+    }
+
+    final activeFriendshipId = _activeChatFriendshipId;
+    if (activeFriendshipId != null &&
+        activeFriendshipId == friendshipId &&
+        _chatMessagesChannel != null) {
+      return;
+    }
+
+    if (_chatMessagesChannel != null) {
+      await Supabase.instance.client.removeChannel(_chatMessagesChannel!);
+      _chatMessagesChannel = null;
+      _activeChatFriendshipId = null;
+    }
+
+    final channel =
+        Supabase.instance.client.channel('friend_messages:$friendshipId');
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'friend_messages',
+      callback: (payload) {
+        final newRecord = payload.newRecord;
+        final oldRecord = payload.oldRecord;
+        final recordFriendshipId = (newRecord['friendship_id'] ??
+            oldRecord['friendship_id']) as String;
+        if (recordFriendshipId != friendshipId) {
+          return;
+        }
+        unawaited(loadChatMessages(friendshipId));
+      },
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'friendship_id',
+        value: friendshipId,
+      ),
+    );
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'friend_typing_states',
+      callback: (_) {
+        unawaited(_refreshFriendTypingState(friendshipId));
+      },
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'friendship_id',
+        value: friendshipId,
+      ),
+    );
+
+    channel.subscribe();
+    _chatMessagesChannel = channel;
+    _activeChatFriendshipId = friendshipId;
+    await _refreshFriendTypingState(friendshipId);
+  }
+
+  Future<void> unsubscribeChat() async {
+    if (_chatMessagesChannel == null) {
+      return;
+    }
+
+    final friendshipId = _activeChatFriendshipId;
+    if (friendshipId != null) {
+      await setTypingState(friendshipId, false);
+      _friendTypingExpiryTimers.remove(friendshipId)?.cancel();
+      getFriendTypingNotifier(friendshipId).value = false;
+    }
+
+    await Supabase.instance.client.removeChannel(_chatMessagesChannel!);
+    _chatMessagesChannel = null;
+    _activeChatFriendshipId = null;
   }
 
   Future<void> _refreshRemoteWorkoutMapping() async {
@@ -1745,12 +2229,12 @@ class WorkoutService extends ChangeNotifier {
 
     int streak = 0;
     DateTime currentDate = DateTime.now();
-    currentDate = DateTime(currentDate.year, currentDate.month, currentDate.day);
+    currentDate =
+        DateTime(currentDate.year, currentDate.month, currentDate.day);
 
     for (final date in dates) {
       final dateOnly = DateTime(date.year, date.month, date.day);
-      final daysDifference =
-          currentDate.difference(dateOnly).inDays;
+      final daysDifference = currentDate.difference(dateOnly).inDays;
 
       if (daysDifference == streak) {
         streak++;
