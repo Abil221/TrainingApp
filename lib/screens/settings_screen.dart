@@ -15,7 +15,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool notificationsEnabled;
   late bool soundEnabled;
   late bool darkMode;
-  late String selectedLanguage;
 
   @override
   void initState() {
@@ -24,7 +23,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     notificationsEnabled = appSettings.notificationsEnabled.value;
     soundEnabled = appSettings.soundEnabled.value;
     darkMode = appSettings.isDarkMode;
-    selectedLanguage = appSettings.selectedLanguage;
   }
 
   @override
@@ -60,7 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'Настрой приложение под свой ритм: уведомления, язык и интерфейс.',
+                    'Настрой приложение под свой ритм: уведомления и интерфейс.',
                     style: TextStyle(
                       color: Color(0xFFD1D5DB),
                       fontSize: 15,
@@ -83,13 +81,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           label: 'звук',
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _HeroSettingStat(
-                          value: selectedLanguage,
-                          label: 'язык',
-                        ),
-                      ),
                     ],
                   ),
                 ],
@@ -103,14 +94,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.notifications_active_outlined,
                     label: 'Уведомления',
                     color: const Color(0xFFFF6B35),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FeaturePill(
-                    icon: Icons.language_rounded,
-                    label: 'Язык',
-                    color: const Color(0xFF111827),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -165,13 +148,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     });
                     AppSettings().setDarkMode(value);
                   },
-                ),
-                ListTile(
-                  title: const Text('Язык'),
-                  subtitle: Text(selectedLanguage),
-                  trailing:
-                      const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-                  onTap: _showLanguageDialog,
                 ),
               ],
             ),
@@ -244,31 +220,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showLanguageDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Выбери язык'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _languageOption('Русский'),
-            _languageOption('English'),
-            _languageOption('Spanish'),
-            _languageOption('French'),
-            _languageOption('German'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Закрыть'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _settingsSection(
       {required String title, required List<Widget> children}) {
     return Container(
@@ -308,22 +259,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       value: value,
       onChanged: onChanged,
       activeThumbColor: const Color(0xFFFF6B35),
-    );
-  }
-
-  Widget _languageOption(String language) {
-    return ListTile(
-      title: Text(language),
-      trailing: selectedLanguage == language
-          ? const Icon(Icons.check, color: Color(0xFFFF6B35))
-          : null,
-      onTap: () {
-        setState(() {
-          selectedLanguage = language;
-        });
-        AppSettings().setLanguage(language);
-        Navigator.pop(context);
-      },
     );
   }
 }

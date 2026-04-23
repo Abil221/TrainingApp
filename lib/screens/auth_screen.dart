@@ -54,9 +54,14 @@ class _AuthScreenState extends State<AuthScreen> {
           password: password,
         );
       } else {
+        final profileName = _nameController.text.trim().isEmpty 
+          ? 'Атлет' 
+          : _nameController.text.trim();
+
         final response = await auth.signUp(
           email: email,
           password: password,
+          data: {'display_name': profileName},
         );
 
         if (!mounted) {
@@ -65,19 +70,17 @@ class _AuthScreenState extends State<AuthScreen> {
 
         // Сохраняем имя профиля после регистрации
         final currentUser = auth.currentUser;
-        if (currentUser != null) {
-          final profileName = _nameController.text.trim().isEmpty 
-            ? 'Атлет' 
-            : _nameController.text.trim();
-          
-          await Supabase.instance.client.from('profiles').upsert({
-            'id': currentUser.id,
-            'email': currentUser.email,
-            'display_name': profileName,
-            'fitness_level': 'Средний',
-            'height': 175,
-            'weight': 75,
-          });
+        if (currentUser != null && response.session != null) {
+          try {
+            await Supabase.instance.client.from('profiles').update({
+              'display_name': profileName,
+              'fitness_level': 'Средний',
+              'height': 175,
+              'weight': 75,
+            }).eq('id', currentUser.id);
+          } catch(e) {
+            debugPrint('Failed to update config during registration: $e');
+          }
 
           // Обновляем локальное хранилище
           final appSettings = AppSettings();

@@ -91,7 +91,7 @@ class _HomeWorkoutsScreenState extends State<HomeWorkoutsScreen> {
             ),
             const SizedBox(height: 20),
             SizedBox(
-              height: 128,
+              height: 160,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: categories.length,

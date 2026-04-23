@@ -33,17 +33,13 @@ class AppSettings {
       ValueNotifier(const UserProgress());
 
   bool get isDarkMode => themeMode.value == ThemeMode.dark;
-
-  String get selectedLanguage => language.value;
-
   Locale get locale => _languageToLocale(language.value);
-
   List<Locale> get supportedLocales => const [
-        Locale('ru'),
+        Locale('de'),
         Locale('en'),
         Locale('es'),
         Locale('fr'),
-        Locale('de'),
+        Locale('ru'),
       ];
 
   Future<void> load() async {
@@ -53,7 +49,6 @@ class AppSettings {
 
     _preferences = await SharedPreferences.getInstance();
     final savedThemeMode = _preferences!.getString(_themeModeKey);
-    final savedLanguage = _preferences!.getString(_languageKey);
 
     if (savedThemeMode == ThemeMode.dark.name) {
       themeMode.value = ThemeMode.dark;
@@ -61,9 +56,7 @@ class AppSettings {
       themeMode.value = ThemeMode.light;
     }
 
-    if (savedLanguage != null && savedLanguage.isNotEmpty) {
-      language.value = savedLanguage;
-    }
+    language.value = _preferences!.getString(_languageKey) ?? 'Русский';
 
     notificationsEnabled.value =
         _preferences!.getBool(_notificationsKey) ?? true;
@@ -112,14 +105,12 @@ class AppSettings {
     }
 
     try {
-      await Supabase.instance.client.from('profiles').upsert({
-        'id': currentUser.id,
-        'email': currentUser.email,
+      await Supabase.instance.client.from('profiles').update({
         'display_name': value.userName,
         'fitness_level': value.fitnessLevel,
         'height': value.height,
         'weight': value.weight,
-      });
+      }).eq('id', currentUser.id);
     } catch (e) {
       // Log error but keep local value
       debugPrint('Error updating profile: $e');
