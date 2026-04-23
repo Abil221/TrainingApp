@@ -414,8 +414,7 @@ class _GoalsScreenState extends State<GoalsScreen>
                           border: OutlineInputBorder(),
                         ),
                         keyboardType: TextInputType.number,
-                        onChanged: (v) =>
-                            currentValue = int.tryParse(v) ?? 0,
+                        onChanged: (v) => currentValue = int.tryParse(v) ?? 0,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -473,26 +472,33 @@ class _GoalsScreenState extends State<GoalsScreen>
               child: const Text('Отмена'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (name.isNotEmpty && targetValue > 0) {
-                  context.read<GoalService>().createGoal(
-                        goalType: GoalType.fromString(goalType),
-                        name: name,
-                        description: description,
-                        targetValue: targetValue.toDouble(),
-                        currentValue: currentValue.toDouble(),
-                        unit: unit,
-                        deadline: deadline,
-                      ).then((_) {
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Цель создана!')),
+                  try {
+                    await context.read<GoalService>().createGoal(
+                          goalType: GoalType.fromString(goalType),
+                          name: name,
+                          description: description,
+                          targetValue: targetValue.toDouble(),
+                          currentValue: currentValue.toDouble(),
+                          unit: unit,
+                          deadline: deadline,
                         );
-                      }).catchError((e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Ошибка: $e')),
-                        );
-                      });
+                    if (!context.mounted) {
+                      return;
+                    }
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Цель создана!')),
+                    );
+                  } catch (e) {
+                    if (!context.mounted) {
+                      return;
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Ошибка: $e')),
+                    );
+                  }
                 }
               },
               child: const Text('Создать'),
@@ -541,13 +547,26 @@ class _GoalsScreenState extends State<GoalsScreen>
             child: const Text('Отмена'),
           ),
           ElevatedButton(
-            onPressed: () {
-              context.read<GoalService>().updateGoal(
-                    goalId: goal.id,
-                    currentValue: currentValue.toDouble(),
-                    description: description,
-                  );
-              Navigator.pop(context);
+            onPressed: () async {
+              try {
+                await context.read<GoalService>().updateGoal(
+                      goalId: goal.id,
+                      name: name,
+                      currentValue: currentValue.toDouble(),
+                      description: description,
+                    );
+                if (!context.mounted) {
+                  return;
+                }
+                Navigator.pop(context);
+              } catch (e) {
+                if (!context.mounted) {
+                  return;
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Ошибка: $e')),
+                );
+              }
             },
             child: const Text('Сохранить'),
           ),
@@ -591,22 +610,29 @@ class _GoalsScreenState extends State<GoalsScreen>
             child: const Text('Отмена'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (weight > 0) {
-                context.read<GoalService>().recordWeight(
-                      null,
-                      weight,
-                      notes: notes.isNotEmpty ? notes : null,
-                    ).then((_) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Вес записан!')),
+                try {
+                  await context.read<GoalService>().recordWeight(
+                        null,
+                        weight,
+                        notes: notes.isNotEmpty ? notes : null,
                       );
-                    }).catchError((e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Ошибка: $e')),
-                      );
-                    });
+                  if (!context.mounted) {
+                    return;
+                  }
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Вес записан!')),
+                  );
+                } catch (e) {
+                  if (!context.mounted) {
+                    return;
+                  }
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Ошибка: $e')),
+                  );
+                }
               }
             },
             child: const Text('Сохранить'),

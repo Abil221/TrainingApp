@@ -125,6 +125,7 @@ class GoalService extends ChangeNotifier {
   Future<void> updateGoal({
     required String goalId,
     required double currentValue,
+    String? name,
     required String? description,
   }) async {
     try {
@@ -132,6 +133,10 @@ class GoalService extends ChangeNotifier {
         'current_value': currentValue,
         'updated_at': DateTime.now().toIso8601String(),
       };
+
+      if (name != null) {
+        updateData['name'] = name;
+      }
 
       if (description != null) {
         updateData['description'] = description;
@@ -143,6 +148,7 @@ class GoalService extends ChangeNotifier {
       final goalIndex = _activeGoals.indexWhere((g) => g.id == goalId);
       if (goalIndex != -1) {
         _activeGoals[goalIndex] = _activeGoals[goalIndex].copyWith(
+          name: name ?? _activeGoals[goalIndex].name,
           currentValue: currentValue,
           description: description ?? _activeGoals[goalIndex].description,
           updatedAt: DateTime.now(),

@@ -206,19 +206,17 @@ class WorkoutService extends ChangeNotifier {
         dailyHistory != null ||
         encodedWorkoutLogs != null;
 
-    if (!hasSavedState) {
-      return;
-    }
+    if (hasSavedState) {
+      _restoreFavorites(favorites ?? const []);
+      _restoreCompletedCounts(completedCounts);
+      _restoreDailyHistory(dailyHistory);
 
-    _restoreFavorites(favorites ?? const []);
-    _restoreCompletedCounts(completedCounts);
-    _restoreDailyHistory(dailyHistory);
-
-    if (encodedWorkoutLogs != null && encodedWorkoutLogs.isNotEmpty) {
-      _restoreWorkoutLogs(encodedWorkoutLogs);
-    } else {
-      _hydrateLogsFromDailyHistory();
-      await _saveState();
+      if (encodedWorkoutLogs != null && encodedWorkoutLogs.isNotEmpty) {
+        _restoreWorkoutLogs(encodedWorkoutLogs);
+      } else {
+        _hydrateLogsFromDailyHistory();
+        await _saveState();
+      }
     }
 
     final encodedFriendProfiles =

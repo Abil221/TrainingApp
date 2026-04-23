@@ -253,22 +253,29 @@ class _WorkoutPlansScreenState extends State<WorkoutPlansScreen> {
               child: const Text('Отмена'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (nameController.text.isNotEmpty) {
-                  context.read<WorkoutPlanService>().createPlan(
-                        name: nameController.text,
-                        description: descriptionController.text,
-                        durationWeeks: weeks,
-                      ).then((_) {
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('План создан!')),
+                  try {
+                    await context.read<WorkoutPlanService>().createPlan(
+                          name: nameController.text,
+                          description: descriptionController.text,
+                          durationWeeks: weeks,
                         );
-                      }).catchError((e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Ошибка: $e')),
-                        );
-                      });
+                    if (!context.mounted) {
+                      return;
+                    }
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('План создан!')),
+                    );
+                  } catch (e) {
+                    if (!context.mounted) {
+                      return;
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Ошибка: $e')),
+                    );
+                  }
                 }
               },
               child: const Text('Создать'),
