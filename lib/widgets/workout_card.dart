@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/workout.dart';
 import '../screens/workout_detail_screen.dart';
+import 'workout_image.dart';
 
 class WorkoutCard extends StatelessWidget {
   final Workout workout;
@@ -43,30 +44,7 @@ class WorkoutCard extends StatelessWidget {
           children: [
             Stack(
               children: [
-                Image.asset(
-                  workout.image,
-                  width: double.infinity,
-                  height: 164,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      width: double.infinity,
-                      height: 164,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF111827), Color(0xFF374151)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.image_outlined,
-                        size: 42,
-                        color: Colors.white70,
-                      ),
-                    );
-                  },
-                ),
+                WorkoutImage(src: workout.image, height: 164),
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(

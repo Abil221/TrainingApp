@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_settings.dart';
 import '../models/user_progress.dart';
@@ -14,6 +15,7 @@ import 'settings_screen.dart';
 import 'achievements_screen.dart';
 import 'workout_plans_screen.dart';
 import 'goals_and_progress_screen.dart';
+import 'admin/admin_panel.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -25,11 +27,21 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final workoutService = WorkoutService();
   final appSettings = AppSettings();
+  bool _isAdmin = false;
 
   @override
   void initState() {
     super.initState();
     workoutService.refreshSocialData();
+    _checkAdmin();
+  }
+
+  Future<void> _checkAdmin() async {
+    try {
+      final result =
+          await Supabase.instance.client.rpc('is_admin') as bool? ?? false;
+      if (mounted) setState(() => _isAdmin = result);
+    } catch (_) {}
   }
 
   @override
@@ -350,6 +362,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             },
                             isDark: isDark,
                           ),
+                          if (_isAdmin) ...[
+                            const SizedBox(height: 16),
+                            Divider(
+                              color: isDark
+                                  ? const Color(0xFF243041)
+                                  : const Color(0xFFE5E7EB),
+                            ),
+                            const SizedBox(height: 8),
+                            _ActionTile(
+                              icon: Icons.admin_panel_settings_rounded,
+                              title: 'Админ-панель',
+                              subtitle:
+                                  'Управление пользователями, тренировками и статистикой',
+                              color: const Color(0xFF6366F1),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const AdminPanel(),
+                                  ),
+                                );
+                              },
+                              isDark: isDark,
+                            ),
+                          ],
                         ],
                       ),
                     ),

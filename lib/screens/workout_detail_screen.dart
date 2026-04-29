@@ -6,6 +6,7 @@ import '../models/workout_log_entry.dart';
 import '../models/workout.dart';
 import '../services/workout_service.dart';
 import '../widgets/app_surfaces.dart';
+import '../widgets/workout_image.dart';
 
 class WorkoutDetailScreen extends StatefulWidget {
   final Workout workout;
@@ -279,29 +280,10 @@ class _WorkoutDetailScreenState extends State<WorkoutDetailScreen> {
                 borderRadius: BorderRadius.circular(30),
                 child: Stack(
                   children: [
-                    Image.asset(
-                      widget.workout.image,
-                      width: double.infinity,
+                    WorkoutImage(
+                      src: widget.workout.image,
                       height: 280,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          width: double.infinity,
-                          height: 280,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Color(0xFF111827), Color(0xFF374151)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.fitness_center,
-                            size: 56,
-                            color: Colors.white70,
-                          ),
-                        );
-                      },
+                      fallbackIcon: Icons.fitness_center,
                     ),
                     Positioned.fill(
                       child: DecoratedBox(

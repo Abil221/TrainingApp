@@ -1221,6 +1221,11 @@ class WorkoutService extends ChangeNotifier {
         _friendProfiles.isNotEmpty ? _friendProfiles.first.id : null;
   }
 
+  Future<void> reloadWorkoutCatalog() async {
+    await _loadWorkoutCatalog();
+    notifyListeners();
+  }
+
   Future<void> refreshSocialData({
     bool notifyOnIncomingIncrease = false,
   }) async {
