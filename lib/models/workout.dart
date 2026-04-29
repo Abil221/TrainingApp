@@ -40,6 +40,33 @@ class Workout {
     }
   }
 
+  factory Workout.fromJson(Map<String, dynamic> json) {
+    DifficultyLevel diff;
+    switch (json['difficulty'] as String? ?? 'medium') {
+      case 'easy':
+        diff = DifficultyLevel.easy;
+      case 'hard':
+        diff = DifficultyLevel.hard;
+      default:
+        diff = DifficultyLevel.medium;
+    }
+    return Workout(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      description: json['description'] as String? ?? '',
+      duration: json['duration_seconds'] as int? ?? 0,
+      image: json['image_url'] as String? ?? '',
+      category: json['category'] as String? ?? '',
+      difficulty: diff,
+      caloriesBurned: json['calories_burned'] as int? ?? 0,
+      equipment: (json['equipment'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
+      instructions: json['instructions'] as String? ?? '',
+    );
+  }
+
   Workout copyWith({
     String? id,
     String? title,

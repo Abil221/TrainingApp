@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/workout.dart';
 import '../models/workout_plan.dart';
 
 class WorkoutPlanService extends ChangeNotifier {
@@ -182,11 +183,9 @@ class WorkoutPlanService extends ChangeNotifier {
     required String workoutId,
   }) async {
     try {
-      // Находим максимальный порядок для этого дня
+      final plan = _userPlans.firstWhere((p) => p.id == planId);
       final existingDays =
-          _activePlan?.days?.where((d) => d.dayOfWeek == dayOfWeek).toList() ??
-              [];
-
+          plan.days?.where((d) => d.dayOfWeek == dayOfWeek).toList() ?? [];
       final maxOrder = existingDays.isEmpty
           ? 0
           : existingDays
@@ -201,16 +200,19 @@ class WorkoutPlanService extends ChangeNotifier {
             'workout_id': workoutId,
             'order_in_day': maxOrder + 1,
           })
-          .select()
+          .select('*, workouts(*)')
           .single();
 
       final day = WorkoutPlanDay.fromJson(result);
 
-      // Обновляем активный план
-      if (_activePlan?.id == planId) {
-        _activePlan = _activePlan!.copyWith(
-          days: [...(_activePlan?.days ?? []), day],
+      final planIndex = _userPlans.indexWhere((p) => p.id == planId);
+      if (planIndex != -1) {
+        _userPlans[planIndex] = _userPlans[planIndex].copyWith(
+          days: [...(_userPlans[planIndex].days ?? []), day],
         );
+        if (_activePlan?.id == planId) {
+          _activePlan = _userPlans[planIndex];
+        }
         notifyListeners();
       }
 
@@ -225,15 +227,39 @@ class WorkoutPlanService extends ChangeNotifier {
     try {
       await _supabase.from('workout_plan_days').delete().eq('id', dayId);
 
-      if (_activePlan != null) {
-        _activePlan = _activePlan!.copyWith(
-          days: _activePlan!.days?.where((d) => d.id != dayId).toList(),
-        );
-        notifyListeners();
+      for (int i = 0; i < _userPlans.length; i++) {
+        if (_userPlans[i].days?.any((d) => d.id == dayId) ?? false) {
+          _userPlans[i] = _userPlans[i].copyWith(
+            days: _userPlans[i].days?.where((d) => d.id != dayId).toList(),
+          );
+          if (_activePlan?.id == _userPlans[i].id) {
+            _activePlan = _userPlans[i];
+          }
+          break;
+        }
       }
+
+      notifyListeners();
     } catch (e) {
       debugPrint('Error removing workout from day: $e');
       rethrow;
+    }
+  }
+
+  Future<List<Workout>> loadAvailableWorkouts() async {
+    try {
+      final data = await _supabase
+          .from('workouts')
+          .select()
+          .eq('is_active', true)
+          .order('category')
+          .order('title');
+      return (data as List)
+          .map((e) => Workout.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('Error loading available workouts: $e');
+      return [];
     }
   }
 

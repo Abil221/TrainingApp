@@ -337,6 +337,7 @@ class _GoalsScreenState extends State<GoalsScreen>
   }
 
   void _showCreateGoalDialog(BuildContext context) {
+    final service = context.read<GoalService>();
     String goalType = GoalType.weightLoss.value;
     String name = '';
     String description = '';
@@ -410,7 +411,7 @@ class _GoalsScreenState extends State<GoalsScreen>
                     Expanded(
                       child: TextField(
                         decoration: const InputDecoration(
-                          labelText: 'Текущее',
+                          labelText: 'Стартовое значение',
                           border: OutlineInputBorder(),
                         ),
                         keyboardType: TextInputType.number,
@@ -475,7 +476,7 @@ class _GoalsScreenState extends State<GoalsScreen>
               onPressed: () async {
                 if (name.isNotEmpty && targetValue > 0) {
                   try {
-                    await context.read<GoalService>().createGoal(
+                    await service.createGoal(
                           goalType: GoalType.fromString(goalType),
                           name: name,
                           description: description,
@@ -487,8 +488,9 @@ class _GoalsScreenState extends State<GoalsScreen>
                     if (!context.mounted) {
                       return;
                     }
+                    final messenger = ScaffoldMessenger.of(context);
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    messenger.showSnackBar(
                       const SnackBar(content: Text('Цель создана!')),
                     );
                   } catch (e) {
@@ -510,6 +512,7 @@ class _GoalsScreenState extends State<GoalsScreen>
   }
 
   void _showEditGoalDialog(BuildContext context, UserGoal goal) {
+    final service = context.read<GoalService>();
     String name = goal.name;
     String description = goal.description;
     int currentValue = goal.currentValue.toInt();
@@ -549,7 +552,7 @@ class _GoalsScreenState extends State<GoalsScreen>
           ElevatedButton(
             onPressed: () async {
               try {
-                await context.read<GoalService>().updateGoal(
+                await service.updateGoal(
                       goalId: goal.id,
                       name: name,
                       currentValue: currentValue.toDouble(),
@@ -576,6 +579,7 @@ class _GoalsScreenState extends State<GoalsScreen>
   }
 
   void _showRecordWeightDialog(BuildContext context) {
+    final service = context.read<GoalService>();
     int weight = 0;
     String notes = '';
 
@@ -613,7 +617,7 @@ class _GoalsScreenState extends State<GoalsScreen>
             onPressed: () async {
               if (weight > 0) {
                 try {
-                  await context.read<GoalService>().recordWeight(
+                  await service.recordWeight(
                         null,
                         weight,
                         notes: notes.isNotEmpty ? notes : null,
@@ -621,8 +625,9 @@ class _GoalsScreenState extends State<GoalsScreen>
                   if (!context.mounted) {
                     return;
                   }
+                  final messenger = ScaffoldMessenger.of(context);
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     const SnackBar(content: Text('Вес записан!')),
                   );
                 } catch (e) {
@@ -643,6 +648,7 @@ class _GoalsScreenState extends State<GoalsScreen>
   }
 
   void _showDeleteConfirmation(BuildContext context, String goalId) {
+    final service = context.read<GoalService>();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -654,7 +660,7 @@ class _GoalsScreenState extends State<GoalsScreen>
           ),
           ElevatedButton(
             onPressed: () {
-              context.read<GoalService>().deleteGoal(goalId);
+              service.deleteGoal(goalId);
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),

@@ -2206,6 +2206,8 @@ class WorkoutService extends ChangeNotifier {
     }
   }
 
+  int getCurrentStreak() => _calculateCurrentStreak();
+
   /// Рассчитать текущую полосу (дни подряд с тренировками)
   int _calculateCurrentStreak() {
     if (_dailyWorkoutLogs.isEmpty) return 0;

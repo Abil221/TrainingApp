@@ -102,6 +102,7 @@ class GoalService extends ChangeNotifier {
             'description': description,
             'target_value': targetValue,
             'current_value': currentValue,
+            'start_value': currentValue,
             'unit': unit,
             'deadline': deadline.toIso8601String(),
             'is_completed': false,

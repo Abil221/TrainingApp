@@ -109,7 +109,9 @@ class WorkoutPlanDay {
       workoutId: json['workout_id'] as String,
       orderInDay: json['order_in_day'] as int? ?? 1,
       createdAt: DateTime.parse(json['created_at'] as String),
-      workout: null,
+      workout: json['workouts'] != null
+          ? Workout.fromJson(json['workouts'] as Map<String, dynamic>)
+          : null,
     );
   }
 

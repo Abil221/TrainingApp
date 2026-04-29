@@ -26,6 +26,7 @@ class UserGoal {
   final String description;
   final double targetValue;
   final double currentValue;
+  final double startValue;
   final String unit;
   final DateTime deadline;
   final bool isCompleted;
@@ -40,6 +41,7 @@ class UserGoal {
     required this.description,
     required this.targetValue,
     required this.currentValue,
+    required this.startValue,
     required this.unit,
     required this.deadline,
     required this.isCompleted,
@@ -48,9 +50,9 @@ class UserGoal {
   });
 
   double get progress {
-    final diff = (targetValue - currentValue).abs();
-    final totalDiff = (targetValue - (targetValue - diff)).abs();
-    return (diff / totalDiff).clamp(0.0, 1.0);
+    final range = targetValue - startValue;
+    if (range.abs() < 0.001) return isCompleted ? 1.0 : 0.0;
+    return ((currentValue - startValue) / range).clamp(0.0, 1.0);
   }
 
   int get daysRemaining {
@@ -68,11 +70,16 @@ class UserGoal {
       description: json['description'] as String? ?? '',
       targetValue: double.parse(json['target_value'].toString()),
       currentValue: double.parse(json['current_value'].toString()),
+      startValue: json['start_value'] != null
+          ? double.parse(json['start_value'].toString())
+          : double.parse(json['current_value'].toString()),
       unit: json['unit'] as String,
       deadline: DateTime.parse(json['deadline'] as String),
       isCompleted: json['is_completed'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : DateTime.now(),
     );
   }
 
@@ -101,6 +108,7 @@ class UserGoal {
     String? description,
     double? targetValue,
     double? currentValue,
+    double? startValue,
     String? unit,
     DateTime? deadline,
     bool? isCompleted,
@@ -115,6 +123,7 @@ class UserGoal {
       description: description ?? this.description,
       targetValue: targetValue ?? this.targetValue,
       currentValue: currentValue ?? this.currentValue,
+      startValue: startValue ?? this.startValue,
       unit: unit ?? this.unit,
       deadline: deadline ?? this.deadline,
       isCompleted: isCompleted ?? this.isCompleted,
