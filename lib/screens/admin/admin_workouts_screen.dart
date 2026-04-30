@@ -81,14 +81,32 @@ class _AdminWorkoutsScreenState extends State<AdminWorkoutsScreen>
   Future<void> _loadWorkouts() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final data = await Supabase.instance.client
-          .from('admin_workout_stats')
-          .select(
-              'id, title, category, difficulty, duration_seconds, calories_burned, equipment, is_active, created_at, total_completions, unique_users, description, instructions')
-          .order('total_completions', ascending: false);
+      // The view has stats but no image_url — fetch it separately from workouts.
+      final results = await Future.wait([
+        Supabase.instance.client
+            .from('admin_workout_stats')
+            .select(
+                'id, title, category, difficulty, duration_seconds, calories_burned, equipment, is_active, created_at, total_completions, unique_users, description, instructions')
+            .order('total_completions', ascending: false),
+        Supabase.instance.client
+            .from('workouts')
+            .select('id, image_url'),
+      ]);
+
+      final statsRows = List<Map<String, dynamic>>.from(results[0] as List? ?? []);
+      final imageRows = List<Map<String, dynamic>>.from(results[1] as List? ?? []);
+
+      final imageById = {
+        for (final row in imageRows)
+          row['id'] as String: row['image_url'] as String?,
+      };
+
       if (!mounted) return;
       setState(() {
-        _allWorkouts = List<Map<String, dynamic>>.from(data as List? ?? []);
+        _allWorkouts = statsRows.map((w) {
+          final id = w['id'] as String? ?? '';
+          return {...w, 'image_url': imageById[id]};
+        }).toList();
         _applyFilter();
         _loading = false;
       });
@@ -630,6 +648,25 @@ class _WorkoutFormSheetState extends State<_WorkoutFormSheet> {
     super.dispose();
   }
 
+  // Maps file extensions to standard MIME types for Supabase Storage.
+  static String _mimeType(String ext) {
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'gif':
+        return 'image/gif';
+      case 'heic':
+        return 'image/heic';
+      default:
+        return 'image/jpeg';
+    }
+  }
+
   Future<void> _pickAndUploadImage() async {
     final picker = ImagePicker();
     final XFile? picked = await picker.pickImage(
@@ -643,33 +680,48 @@ class _WorkoutFormSheetState extends State<_WorkoutFormSheet> {
     setState(() => _uploadingImage = true);
     try {
       final bytes = await picked.readAsBytes();
+      if (bytes.isEmpty) throw Exception('Файл пустой или не читается');
+
       final ext = picked.name.split('.').last.toLowerCase();
-      final fileName = 'workout_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final mime = _mimeType(ext);
+      final storageExt = (ext == 'jpg') ? 'jpeg' : ext;
+      final fileName =
+          'workout_${DateTime.now().millisecondsSinceEpoch}.$storageExt';
 
       await Supabase.instance.client.storage
           .from('workout-images')
           .uploadBinary(
             fileName,
             bytes,
-            fileOptions: FileOptions(contentType: 'image/$ext', upsert: true),
+            fileOptions: FileOptions(contentType: mime, upsert: true),
           );
 
-      final publicUrl = Supabase.instance.client.storage
+      // Append a timestamp to bust Supabase CDN cache for the new file.
+      final rawUrl = Supabase.instance.client.storage
           .from('workout-images')
           .getPublicUrl(fileName);
+      final publicUrl = '$rawUrl?t=${DateTime.now().millisecondsSinceEpoch}';
 
-      if (mounted) setState(() { _imageUrl = publicUrl; _uploadingImage = false; });
+      if (!mounted) return;
+      setState(() {
+        _imageUrl = publicUrl;
+        _uploadingImage = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _uploadingImage = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Ошибка загрузки: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка загрузки изображения: $e')),
+      );
     }
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() { _saving = true; });
+
+    // Strip the cache-busting query param before saving to DB.
+    final cleanImageUrl = _imageUrl?.split('?').first;
 
     final payload = {
       'title': _titleCtrl.text.trim(),
@@ -680,7 +732,8 @@ class _WorkoutFormSheetState extends State<_WorkoutFormSheet> {
       'category': _category,
       'difficulty': _difficulty,
       'is_active': _isActive,
-      if (_imageUrl != null) 'image_url': _imageUrl,
+      if (cleanImageUrl != null && cleanImageUrl.isNotEmpty)
+        'image_url': cleanImageUrl,
       // legacy_id is required by workout_service to display the workout in the app
       if (widget.existing == null)
         'legacy_id': 'admin_${DateTime.now().millisecondsSinceEpoch}',

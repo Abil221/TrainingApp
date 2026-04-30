@@ -185,17 +185,17 @@ class _SocialStatsScreenState extends State<SocialStatsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final friends = _workoutService.getFriendProfiles();
-    final activeFriend = friends.isNotEmpty
-        ? friends.firstWhere(
-            (friend) => friend.id == _selectedFriendId,
-            orElse: () => friends.first,
-          )
-        : null;
 
     return ListenableBuilder(
       listenable: _workoutService,
       builder: (context, child) {
+        final friends = _workoutService.getFriendProfiles();
+        final activeFriend = friends.isNotEmpty
+            ? friends.firstWhere(
+                (friend) => friend.id == _selectedFriendId,
+                orElse: () => friends.first,
+              )
+            : null;
         final stats = _workoutService.getStats();
         final friendStats = activeFriend != null && activeFriend.id != 'none'
             ? _workoutService.getFriendStats(activeFriend.id)
@@ -269,76 +269,79 @@ class _SocialStatsScreenState extends State<SocialStatsScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // Comparison Card
-                  if (activeFriend != null)
-                    _ComparisonCard(
-                      activeFriend: activeFriend,
-                      friends: friends,
-                      selectedFriendId: _selectedFriendId,
-                      onFriendChanged: (value) {
-                        setState(() {
-                          _selectedFriendId = value;
-                        });
-                      },
-                      totalWorkouts: stats['totalWorkouts'] ?? 0,
-                      friendWorkouts: friendStats['totalWorkouts'] ?? 0,
-                      totalCalories: stats['totalCalories'] ?? 0,
-                      friendCalories: friendStats['totalCalories'] ?? 0,
-                      totalDuration: (stats['totalDuration'] ?? 0) ~/ 60,
-                      friendDuration:
-                          (friendStats['totalDuration'] ?? 0) ~/ 60,
-                      streak: _workoutService.getTrainingStreak(),
-                      friendStreak:
-                          _workoutService.getFriendTrainingStreak(activeFriend.id),
-                      sharedDays:
-                          _workoutService.getSharedTrainingDays(activeFriend.id),
-                      sharedStreak: _workoutService
-                          .getSharedTrainingStreak(activeFriend.id),
-                      isDark: isDark,
-                    ),
-                  const SizedBox(height: 24),
-
-                  // Friends List Section
-                  if (friends.isNotEmpty)
-                    _FriendsListCard(
-                      friends: friends,
-                      lastMessages: _lastChatMessages,
-                      unreadCounts: _unreadChatCounts,
-                      onOpenChat: _handleOpenChat,
-                      onRemoveFriend: (friendshipId) =>
-                          _handleRemoveFriendship(
-                        friendshipId,
-                        'Друг удален',
+                  if (_isLoading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else ...[
+                    // Comparison Card
+                    if (activeFriend != null) ...[
+                      _ComparisonCard(
+                        key: ValueKey(_selectedFriendId),
+                        activeFriend: activeFriend,
+                        friends: friends,
+                        selectedFriendId: _selectedFriendId,
+                        onFriendChanged: (value) {
+                          setState(() {
+                            _selectedFriendId = value;
+                          });
+                        },
+                        totalWorkouts: stats['totalWorkouts'] ?? 0,
+                        friendWorkouts: friendStats['totalWorkouts'] ?? 0,
+                        totalCalories: stats['totalCalories'] ?? 0,
+                        friendCalories: friendStats['totalCalories'] ?? 0,
+                        totalDuration: (stats['totalDuration'] ?? 0) ~/ 60,
+                        friendDuration: (friendStats['totalDuration'] ?? 0) ~/ 60,
+                        streak: _workoutService.getTrainingStreak(),
+                        friendStreak: _workoutService.getFriendTrainingStreak(activeFriend.id),
+                        sharedDays: _workoutService.getSharedTrainingDays(activeFriend.id),
+                        sharedStreak: _workoutService.getSharedTrainingStreak(activeFriend.id),
+                        isDark: isDark,
                       ),
-                      isDark: isDark,
-                    ),
-                  const SizedBox(height: 24),
+                      const SizedBox(height: 24),
+                    ],
 
-                  // Requests Section
-                  if (_incomingRequests.isNotEmpty)
-                    _RequestsCard(
-                      title: 'Входящие заявки',
-                      requests: _incomingRequests,
-                      onRespond: _handleRespond,
-                      isDark: isDark,
-                    ),
-                  if (_incomingRequests.isNotEmpty)
-                    const SizedBox(height: 16),
-
-                  if (_outgoingRequests.isNotEmpty)
-                    _RequestsCard(
-                      title: 'Отправленные заявки',
-                      requests: _outgoingRequests,
-                      onRespond: (request, accept) =>
-                          _handleRemoveFriendship(
-                        request.friendshipId,
-                        'Заявка отменена',
+                    // Friends List Section
+                    if (friends.isNotEmpty) ...[
+                      _FriendsListCard(
+                        friends: friends,
+                        lastMessages: _lastChatMessages,
+                        unreadCounts: _unreadChatCounts,
+                        onOpenChat: _handleOpenChat,
+                        onRemoveFriend: (friendshipId) =>
+                            _handleRemoveFriendship(friendshipId, 'Друг удален'),
+                        isDark: isDark,
                       ),
-                      isDark: isDark,
-                      isOutgoing: true,
-                    ),
-                  if (_outgoingRequests.isNotEmpty)
-                    const SizedBox(height: 24),
+                      const SizedBox(height: 24),
+                    ],
+
+                    // Requests Section
+                    if (_incomingRequests.isNotEmpty) ...[
+                      _RequestsCard(
+                        title: 'Входящие заявки',
+                        requests: _incomingRequests,
+                        onRespond: _handleRespond,
+                        isDark: isDark,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    if (_outgoingRequests.isNotEmpty) ...[
+                      _RequestsCard(
+                        title: 'Отправленные заявки',
+                        requests: _outgoingRequests,
+                        onRespond: (request, accept) =>
+                            _handleRemoveFriendship(
+                          request.friendshipId,
+                          'Заявка отменена',
+                        ),
+                        isDark: isDark,
+                        isOutgoing: true,
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                  ],
 
                   // Search Section
                   Container(
@@ -469,6 +472,7 @@ class _ComparisonCard extends StatelessWidget {
   final bool isDark;
 
   const _ComparisonCard({
+    super.key,
     required this.activeFriend,
     required this.friends,
     required this.selectedFriendId,
@@ -933,12 +937,12 @@ class _FriendTile extends StatelessWidget {
           PopupMenuButton(
             itemBuilder: (context) => [
               PopupMenuItem(
-                child: const Text('Написать'),
                 onTap: onOpenChat,
+                child: const Text('Написать'),
               ),
               PopupMenuItem(
-                child: const Text('Удалить'),
                 onTap: onRemove,
+                child: const Text('Удалить'),
               ),
             ],
           ),

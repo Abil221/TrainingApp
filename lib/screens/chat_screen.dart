@@ -25,6 +25,7 @@ class _ChatScreenState extends State<ChatScreen> {
   DateTime? _lastTypingHeartbeatAt;
   bool _isSending = false;
   bool _hasTypingState = false;
+  int _prevMessageCount = 0;
 
   @override
   void initState() {
@@ -55,15 +56,20 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
   }
 
+  bool _isAtBottom() {
+    if (!_scrollController.hasClients) return true;
+    final pos = _scrollController.position;
+    return pos.pixels >= pos.maxScrollExtent - 150;
+  }
+
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty || widget.friend.friendshipId == null) {
-      return;
-    }
+    if (text.isEmpty || widget.friend.friendshipId == null) return;
 
-    setState(() {
-      _isSending = true;
-    });
+    setState(() => _isSending = true);
+
+    // Clear input immediately for snappy UX; restore on error
+    _messageController.clear();
 
     try {
       await _stopTyping();
@@ -72,15 +78,12 @@ class _ChatScreenState extends State<ChatScreen> {
         widget.friend.id,
         text,
       );
-      _messageController.clear();
-      await _loadMessages();
-      _scrollToBottom();
+      // Message appears instantly via optimistic update in the service.
+      // No need to call _loadMessages() — the ValueListenableBuilder handles scroll.
+    } catch (_) {
+      if (mounted) _messageController.text = text;
     } finally {
-      if (mounted) {
-        setState(() {
-          _isSending = false;
-        });
-      }
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
@@ -276,7 +279,16 @@ class _ChatScreenState extends State<ChatScreen> {
               child: ValueListenableBuilder<List<ChatMessage>>(
                 valueListenable: messagesNotifier,
                 builder: (context, messages, child) {
-                  _scrollToBottom();
+                  // Scroll to bottom when new messages arrive:
+                  // always if I sent the message, or if already near bottom.
+                  if (messages.length > _prevMessageCount) {
+                    _prevMessageCount = messages.length;
+                    final last = messages.isNotEmpty ? messages.last : null;
+                    final isMine = last?.senderId == currentUserId;
+                    if (isMine || _isAtBottom()) {
+                      _scrollToBottom();
+                    }
+                  }
                   if (messages.isEmpty) {
                     return const Center(
                       child: Text(

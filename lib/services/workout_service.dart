@@ -1545,22 +1545,65 @@ class WorkoutService extends ChangeNotifier {
 
     final channel = Supabase.instance.client
         .channel('friend_messages_summary:$currentUserId');
+
+    // INSERT — new message arrives
     channel.onPostgresChanges(
-      event: PostgresChangeEvent.all,
+      event: PostgresChangeEvent.insert,
       schema: 'public',
       table: 'friend_messages',
       callback: (payload) {
-        final newRecord = payload.newRecord;
+        final record = payload.newRecord;
+        final senderId = record['sender_id'] as String?;
+        final recipientId = record['recipient_id'] as String?;
+
+        if (senderId != currentUserId && recipientId != currentUserId) return;
+
+        // If this message belongs to the currently open chat — append it live.
+        final msgFriendshipId = record['friendship_id'] as String?;
+        if (msgFriendshipId != null &&
+            msgFriendshipId == _activeChatFriendshipId) {
+          try {
+            final incoming = ChatMessage.fromJson(record);
+            final existing =
+                _chatMessagesByFriendshipId[msgFriendshipId] ?? [];
+            if (!existing.any((m) => m.id == incoming.id)) {
+              final withoutTemp =
+                  existing.where((m) => m.id != '__sending__').toList();
+              final updated = [...withoutTemp, incoming];
+              _chatMessagesByFriendshipId[msgFriendshipId] = updated;
+              _lastChatMessageByFriendshipId[msgFriendshipId] = incoming;
+              getChatMessagesNotifier(msgFriendshipId).value = updated;
+              unawaited(markChatAsRead(msgFriendshipId));
+            }
+          } catch (_) {
+            unawaited(loadChatMessages(msgFriendshipId));
+          }
+        }
+
+        unawaited(_handleFriendMessageRealtimeEvent());
+      },
+    );
+
+    // UPDATE — e.g. read_at set; reload active chat to reflect read status
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.update,
+      schema: 'public',
+      table: 'friend_messages',
+      callback: (payload) {
+        final record = payload.newRecord;
         final oldRecord = payload.oldRecord;
         final senderId =
-            (newRecord['sender_id'] ?? oldRecord['sender_id']) as String?;
+            (record['sender_id'] ?? oldRecord['sender_id']) as String?;
         final recipientId =
-            (newRecord['recipient_id'] ?? oldRecord['recipient_id']) as String?;
+            (record['recipient_id'] ?? oldRecord['recipient_id']) as String?;
 
-        final isRelatedToCurrentUser =
-            senderId == currentUserId || recipientId == currentUserId;
-        if (!isRelatedToCurrentUser) {
-          return;
+        if (senderId != currentUserId && recipientId != currentUserId) return;
+
+        final msgFriendshipId = (record['friendship_id'] ??
+            oldRecord['friendship_id']) as String?;
+        if (msgFriendshipId != null &&
+            msgFriendshipId == _activeChatFriendshipId) {
+          unawaited(loadChatMessages(msgFriendshipId));
         }
 
         unawaited(_handleFriendMessageRealtimeEvent());
@@ -1738,93 +1781,74 @@ class WorkoutService extends ChangeNotifier {
       return;
     }
 
-    final result = await Supabase.instance.client
-        .from('friend_messages')
-        .insert({
-          'friendship_id': friendshipId,
-          'sender_id': currentUser.id,
-          'recipient_id': recipientId,
-          'content': content.trim(),
-          'created_at': DateTime.now().toIso8601String(),
-        })
-        .select()
-        .single();
+    const tempId = '__sending__';
+    final trimmed = content.trim();
+    final now = DateTime.now();
 
-    final newMessage = ChatMessage.fromJson(result);
-    final existing = _chatMessagesByFriendshipId[friendshipId] ?? [];
-    final updatedMessages = [...existing, newMessage];
-    _chatMessagesByFriendshipId[friendshipId] = updatedMessages;
-    _lastChatMessageByFriendshipId[friendshipId] = newMessage;
-    getChatMessagesNotifier(friendshipId).value = updatedMessages;
-    await setTypingState(friendshipId, false);
+    // Optimistic update — show message immediately before DB response
+    final tempMessage = ChatMessage(
+      id: tempId,
+      friendshipId: friendshipId,
+      senderId: currentUser.id,
+      recipientId: recipientId,
+      content: trimmed,
+      createdAt: now,
+    );
+    final before = _chatMessagesByFriendshipId[friendshipId] ?? [];
+    final withTemp = [...before, tempMessage];
+    _chatMessagesByFriendshipId[friendshipId] = withTemp;
+    getChatMessagesNotifier(friendshipId).value = withTemp;
+
+    try {
+      final result = await Supabase.instance.client
+          .from('friend_messages')
+          .insert({
+            'friendship_id': friendshipId,
+            'sender_id': currentUser.id,
+            'recipient_id': recipientId,
+            'content': trimmed,
+            'created_at': now.toUtc().toIso8601String(),
+          })
+          .select()
+          .single();
+
+      final confirmedMessage = ChatMessage.fromJson(result);
+      // Replace temp with the confirmed server message
+      final current = _chatMessagesByFriendshipId[friendshipId] ?? [];
+      final confirmed = [
+        ...current.where((m) => m.id != tempId),
+        confirmedMessage,
+      ];
+      _chatMessagesByFriendshipId[friendshipId] = confirmed;
+      _lastChatMessageByFriendshipId[friendshipId] = confirmedMessage;
+      getChatMessagesNotifier(friendshipId).value = confirmed;
+    } catch (e) {
+      // Rollback optimistic message on error
+      final current = _chatMessagesByFriendshipId[friendshipId] ?? [];
+      final rolled = current.where((m) => m.id != tempId).toList();
+      _chatMessagesByFriendshipId[friendshipId] = rolled;
+      getChatMessagesNotifier(friendshipId).value = rolled;
+      rethrow;
+    }
+
+    unawaited(setTypingState(friendshipId, false));
   }
 
   Future<void> setTypingState(String friendshipId, bool isTyping) async {
     final currentUser = Supabase.instance.client.auth.currentUser;
-    if (currentUser == null || friendshipId.isEmpty) {
-      return;
-    }
-
-    await Supabase.instance.client.from('friend_typing_states').upsert(
-      {
-        'friendship_id': friendshipId,
-        'user_id': currentUser.id,
-        'is_typing': isTyping,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      onConflict: 'friendship_id,user_id',
-    );
-  }
-
-  Future<void> _refreshFriendTypingState(String friendshipId) async {
-    final currentUser = Supabase.instance.client.auth.currentUser;
-    if (currentUser == null || friendshipId.isEmpty) {
-      return;
-    }
-
+    if (currentUser == null || friendshipId.isEmpty) return;
     try {
-      final threshold = DateTime.now().subtract(_friendTypingTtl);
-      final response = await Supabase.instance.client
-          .from('friend_typing_states')
-          .select('user_id, is_typing, updated_at')
-          .eq('friendship_id', friendshipId)
-          .neq('user_id', currentUser.id)
-          .eq('is_typing', true)
-          .gte('updated_at', threshold.toIso8601String())
-          .order('updated_at', ascending: false)
-          .limit(1);
-
-      final rows =
-          (response as List<dynamic>).whereType<Map<String, dynamic>>();
-      final activeTypingState = rows.cast<Map<String, dynamic>?>().firstWhere(
-            (row) => row != null,
-            orElse: () => null,
-          );
-      final isFriendTyping = activeTypingState != null;
-      getFriendTypingNotifier(friendshipId).value = isFriendTyping;
-
-      _friendTypingExpiryTimers.remove(friendshipId)?.cancel();
-      if (!isFriendTyping) {
-        return;
-      }
-
-      final updatedAtRaw = activeTypingState['updated_at'] as String?;
-      final updatedAt = updatedAtRaw == null
-          ? DateTime.now()
-          : DateTime.tryParse(updatedAtRaw)?.toLocal() ?? DateTime.now();
-      final expiresAt = updatedAt.add(_friendTypingTtl);
-      final remaining = expiresAt.difference(DateTime.now());
-
-      _friendTypingExpiryTimers[friendshipId] = Timer(
-        remaining.isNegative ? Duration.zero : remaining,
-        () {
-          getFriendTypingNotifier(friendshipId).value = false;
-          _friendTypingExpiryTimers.remove(friendshipId);
+      final channel = _chatMessagesChannel;
+      if (channel == null) return;
+      await channel.sendBroadcastMessage(
+        event: 'typing',
+        payload: {
+          'is_typing': isTyping,
+          'user_id': currentUser.id,
         },
       );
     } catch (_) {
-      _friendTypingExpiryTimers.remove(friendshipId)?.cancel();
-      getFriendTypingNotifier(friendshipId).value = false;
+      // Typing indicator is best-effort — ignore errors
     }
   }
 
@@ -1863,46 +1887,38 @@ class WorkoutService extends ChangeNotifier {
       _activeChatFriendshipId = null;
     }
 
+    // Message delivery for the active chat is handled by the global
+    // _configureFriendMessagesRealtime channel (unfiltered — always reliable).
+    // This per-chat channel is used solely for typing Broadcast events.
     final channel =
-        Supabase.instance.client.channel('friend_messages:$friendshipId');
-    channel.onPostgresChanges(
-      event: PostgresChangeEvent.all,
-      schema: 'public',
-      table: 'friend_messages',
+        Supabase.instance.client.channel('chat:$friendshipId');
+
+    // Typing indicator via Realtime Broadcast (no DB writes needed)
+    channel.onBroadcast(
+      event: 'typing',
       callback: (payload) {
-        final newRecord = payload.newRecord;
-        final oldRecord = payload.oldRecord;
-        final recordFriendshipId = (newRecord['friendship_id'] ??
-            oldRecord['friendship_id']) as String;
-        if (recordFriendshipId != friendshipId) {
-          return;
+        final currentUserId =
+            Supabase.instance.client.auth.currentUser?.id;
+        final senderId = payload['user_id'] as String?;
+        if (senderId == null || senderId == currentUserId) return;
+
+        final isTyping = payload['is_typing'] as bool? ?? false;
+        getFriendTypingNotifier(friendshipId).value = isTyping;
+
+        _friendTypingExpiryTimers.remove(friendshipId)?.cancel();
+        if (isTyping) {
+          _friendTypingExpiryTimers[friendshipId] =
+              Timer(_friendTypingTtl, () {
+            getFriendTypingNotifier(friendshipId).value = false;
+            _friendTypingExpiryTimers.remove(friendshipId);
+          });
         }
-        unawaited(loadChatMessages(friendshipId));
       },
-      filter: PostgresChangeFilter(
-        type: PostgresChangeFilterType.eq,
-        column: 'friendship_id',
-        value: friendshipId,
-      ),
-    );
-    channel.onPostgresChanges(
-      event: PostgresChangeEvent.all,
-      schema: 'public',
-      table: 'friend_typing_states',
-      callback: (_) {
-        unawaited(_refreshFriendTypingState(friendshipId));
-      },
-      filter: PostgresChangeFilter(
-        type: PostgresChangeFilterType.eq,
-        column: 'friendship_id',
-        value: friendshipId,
-      ),
     );
 
     channel.subscribe();
     _chatMessagesChannel = channel;
     _activeChatFriendshipId = friendshipId;
-    await _refreshFriendTypingState(friendshipId);
   }
 
   Future<void> unsubscribeChat() async {
