@@ -27,13 +27,9 @@ class _DailyStatsScreenState extends State<DailyStatsScreen> {
   @override
   void initState() {
     super.initState();
-    final trainingDates = workoutService.getAllTrainingDates();
-    final initialDate = trainingDates.isNotEmpty
-        ? _normalizeDate(trainingDates.first)
-        : _normalizeDate(DateTime.now());
-
-    _visibleMonth = DateTime(initialDate.year, initialDate.month);
-    _selectedDate = initialDate;
+    final today = _normalizeDate(DateTime.now());
+    _visibleMonth = DateTime(today.year, today.month);
+    _selectedDate = today;
 
     final progressWorkouts = workoutService.getWorkoutsWithProgressLogs();
     if (progressWorkouts.isNotEmpty) {

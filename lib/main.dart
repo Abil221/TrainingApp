@@ -12,6 +12,7 @@ import 'screens/home_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/daily_stats_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/social_stats_screen.dart';
 import 'services/workout_service.dart';
 import 'services/achievement_service.dart';
 import 'services/goal_service.dart';
@@ -234,6 +235,7 @@ class _MainTabsState extends State<MainTabs> with WidgetsBindingObserver {
     HomeScreen(),
     SearchScreen(),
     DailyStatsScreen(),
+    SocialStatsScreen(),
     ProfileScreen(),
   ];
 
@@ -328,8 +330,12 @@ class _MainTabsState extends State<MainTabs> with WidgetsBindingObserver {
                   child: child,
                 );
               },
-              child: const Icon(Icons.person_rounded),
+              child: const Icon(Icons.people_alt_rounded),
             ),
+            label: 'Социум',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_rounded),
             label: 'Профиль',
           ),
         ],
